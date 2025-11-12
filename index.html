@@ -3,23 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supabase 数据查看器 - 调试版</title>
+    <title>Supabase 数据调试器</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
         .config { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
         .config input { width: 400px; padding: 8px; margin: 5px; }
-        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .error { color: red; }
+        .debug { background: #fff3cd; padding: 15px; margin: 10px 0; border-radius: 4px; font-family: monospace; }
         .success { color: green; }
-        .debug { background: #fff3cd; padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="config">
-        <h3>Supabase 配置</h3>
+        <h3>Supabase 配置调试</h3>
         <div>
             <label>Supabase URL:</label><br>
             <input type="text" id="supabaseUrl" placeholder="https://your-project.supabase.co">
@@ -30,9 +29,11 @@
         </div>
         <div>
             <label>表名:</label><br>
-            <input type="text" id="tableName" value="取信异常设备清单" placeholder="表名">
+            <input type="text" id="tableName" placeholder="输入表名">
         </div>
         <button onclick="testConnection()">测试连接</button>
+        <button onclick="listAllTables()">查看所有表</button>
+        <button onclick="checkTableStructure()">检查表结构</button>
         <button onclick="loadTableData()">加载数据</button>
     </div>
 
@@ -53,13 +54,12 @@
         function initSupabase() {
             const config = getConfig();
             if (!config.url || !config.key) {
-                showDebug('请填写 Supabase URL 和 Key');
+                showDebug('请填写 Supabase URL 和 Key', 'error');
                 return null;
             }
             
             try {
                 supabase = window.supabase.createClient(config.url, config.key);
-                showDebug('Supabase 客户端初始化成功', 'success');
                 return supabase;
             } catch (error) {
                 showDebug('初始化失败: ' + error.message, 'error');
@@ -67,34 +67,136 @@
             }
         }
 
-        async function testConnection() {
-            const config = getConfig();
-            showDebug('正在测试连接...');
-            
+        async function listAllTables() {
             if (!initSupabase()) return;
 
+            showDebug('正在获取数据库中的所有表...', 'info');
+            
             try {
-                // 测试基本连接
+                // 方法1: 通过查询信息模式获取表列表
+                const { data, error } = await supabase
+                    .from('_tables')  // Supabase 的系统表
+                    .select('*')
+                    .limit(50);
+
+                if (error) {
+                    // 如果方法1失败，尝试方法2
+                    await listTablesAlternative();
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    showDebug(`找到 ${data.length} 个表:`, 'success');
+                    data.forEach(table => {
+                        showDebug(`- ${table.name}`, 'info');
+                    });
+                } else {
+                    showDebug('未找到任何表', 'error');
+                }
+            } catch (error) {
+                showDebug('获取表列表失败: ' + error.message, 'error');
+            }
+        }
+
+        async function listTablesAlternative() {
+            try {
+                // 尝试查询一个不存在的表来触发错误，从错误信息中获取提示
+                const { error } = await supabase
+                    .from('nonexistent_table')
+                    .select('*')
+                    .limit(1);
+
+                if (error && error.message) {
+                    showDebug('无法直接获取表列表，请手动输入表名。错误信息: ' + error.message, 'error');
+                }
+            } catch (error) {
+                showDebug('备选方法也失败: ' + error.message, 'error');
+            }
+        }
+
+        async function checkTableStructure() {
+            const config = getConfig();
+            if (!config.table) {
+                showDebug('请先输入表名', 'error');
+                return;
+            }
+
+            if (!initSupabase()) return;
+
+            showDebug(`正在检查表 "${config.table}" 的结构...`, 'info');
+
+            try {
                 const { data, error } = await supabase
                     .from(config.table)
                     .select('*')
                     .limit(1);
 
                 if (error) {
-                    if (error.code === 'PGRST116') {
-                        showDebug(`表 "${config.table}" 为空`, 'success');
-                    } else if (error.message.includes('does not exist')) {
+                    if (error.message.includes('does not exist')) {
                         showDebug(`错误: 表 "${config.table}" 不存在`, 'error');
                     } else if (error.message.includes('JWT')) {
-                        showDebug('错误: API Key 无效或格式错误', 'error');
+                        showDebug('错误: API Key 无效', 'error');
                     } else {
-                        showDebug('连接错误: ' + error.message, 'error');
+                        showDebug('查询错误: ' + error.message, 'error');
                     }
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    const firstRow = data[0];
+                    const columns = Object.keys(firstRow);
+                    
+                    showDebug(`表 "${config.table}" 结构:`, 'success');
+                    columns.forEach(col => {
+                        const value = firstRow[col];
+                        showDebug(`- ${col}: ${typeof value} (示例值: ${value})`, 'info');
+                    });
                 } else {
-                    showDebug(`连接成功! 表中有 ${data.length} 条记录`, 'success');
+                    showDebug(`表 "${config.table}" 存在但为空`, 'error');
                 }
             } catch (error) {
-                showDebug('测试连接失败: ' + error.message, 'error');
+                showDebug('检查表结构失败: ' + error.message, 'error');
+            }
+        }
+
+        async function testConnection() {
+            const config = getConfig();
+            showDebug('正在测试连接...', 'info');
+            
+            if (!initSupabase()) return;
+
+            try {
+                // 测试基本连接
+                const { data, error } = await supabase
+                    .from('_health')  // Supabase 的健康检查表
+                    .select('*')
+                    .limit(1);
+
+                if (error) {
+                    // 如果健康检查表不存在，尝试其他方法
+                    await testConnectionAlternative();
+                    return;
+                }
+
+                showDebug('连接成功! Supabase 服务正常', 'success');
+                
+            } catch (error) {
+                showDebug('连接测试失败: ' + error.message, 'error');
+            }
+        }
+
+        async function testConnectionAlternative() {
+            try {
+                // 尝试获取数据库时间
+                const { data, error } = await supabase.rpc('get_time');
+                
+                if (error) {
+                    showDebug('基础连接测试失败: ' + error.message, 'error');
+                } else {
+                    showDebug('连接成功! RPC 功能正常', 'success');
+                }
+            } catch (error) {
+                showDebug('备选连接测试也失败: ' + error.message, 'error');
             }
         }
 
@@ -102,39 +204,47 @@
             const config = getConfig();
             const container = document.getElementById('data-container');
             
+            if (!config.table) {
+                showDebug('请先输入表名', 'error');
+                return;
+            }
+
             if (!initSupabase()) return;
 
-            showDebug('正在加载数据...');
+            showDebug(`正在从表 "${config.table}" 加载数据...`, 'info');
             container.innerHTML = '<p>加载中...</p>';
 
             try {
-                // 首先检查表结构
-                const { data: sampleData, error: sampleError } = await supabase
-                    .from(config.table)
-                    .select('*')
-                    .limit(1);
-
-                if (sampleError) {
-                    showDebug('查询失败: ' + sampleError.message, 'error');
-                    container.innerHTML = `<p class="error">错误: ${sampleError.message}</p>`;
-                    return;
-                }
-
-                if (!sampleData || sampleData.length === 0) {
-                    showDebug('表中没有数据', 'error');
-                    container.innerHTML = '<p>表中没有数据</p>';
-                    return;
-                }
-
-                // 获取所有数据
+                // 首先检查表是否存在
                 const { data, error } = await supabase
                     .from(config.table)
                     .select('*')
-                    .order('id', { ascending: false })
                     .limit(100);
 
                 if (error) {
-                    throw error;
+                    showDebug('查询失败: ' + error.message, 'error');
+                    container.innerHTML = `<p class="error">错误: ${error.message}</p>`;
+                    return;
+                }
+
+                if (!data || data.length === 0) {
+                    showDebug(`表 "${config.table}" 查询成功，但返回 0 条记录`, 'error');
+                    container.innerHTML = '<p>表中没有数据</p>';
+                    
+                    // 建议用户检查的内容
+                    showDebug(`
+可能的原因:
+1. 表名不正确
+2. RLS (行级安全) 策略限制
+3. 表确实为空
+4. 认证问题
+
+建议操作:
+1. 点击"查看所有表"确认表名
+2. 在 Supabase 控制台检查 RLS 策略
+3. 在 Supabase SQL 编辑器中直接查询数据
+                    `, 'info');
+                    return;
                 }
 
                 showDebug(`成功加载 ${data.length} 条记录`, 'success');
@@ -147,19 +257,14 @@
         }
 
         function renderTable(data, container) {
-            if (!data || data.length === 0) {
-                container.innerHTML = '<p>没有数据</p>';
-                return;
-            }
-
             const columns = Object.keys(data[0]);
             
             let html = `
                 <h3>数据表: ${getConfig().table} (共 ${data.length} 条记录)</h3>
-                <table>
+                <table border="1" style="border-collapse: collapse; width: 100%;">
                     <thead>
-                        <tr>
-                            ${columns.map(col => `<th>${col}</th>`).join('')}
+                        <tr style="background: #f0f0f0;">
+                            ${columns.map(col => `<th style="padding: 8px; border: 1px solid #ccc;">${col}</th>`).join('')}
                         </tr>
                     </thead>
                     <tbody>
@@ -167,7 +272,7 @@
 
             data.forEach(row => {
                 html += `<tr>${columns.map(col => 
-                    `<td title="${row[col]}">${formatValue(row[col])}</td>`
+                    `<td style="padding: 8px; border: 1px solid #ccc;" title="${row[col]}">${formatValue(row[col])}</td>`
                 ).join('')}</tr>`;
             });
 
@@ -176,16 +281,23 @@
         }
 
         function formatValue(value) {
-            if (value === null || value === undefined) return '<em>null</em>';
+            if (value === null || value === undefined) return '<em style="color: #999;">null</em>';
             if (typeof value === 'object') return JSON.stringify(value);
             const str = value.toString();
-            return str.length > 50 ? str.substring(0, 50) + '...' : str;
+            return str.length > 100 ? str.substring(0, 100) + '...' : str;
         }
 
         function showDebug(message, type = 'info') {
             const debugDiv = document.getElementById('debug-info');
-            debugDiv.innerHTML = `<div class="${type}">${message}</div>`;
-            console.log(`[DEBUG] ${message}`);
+            const timestamp = new Date().toLocaleTimeString();
+            debugDiv.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            debugDiv.scrollTop = debugDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // 清空调试信息
+        function clearDebug() {
+            document.getElementById('debug-info').innerHTML = '';
         }
 
         // 页面加载时尝试从本地存储加载配置
