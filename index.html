@@ -3,38 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supabase 数据调试器</title>
+    <title>Supabase 数据查看器 - 直接解决方案</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
         .config { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        .config input { width: 400px; padding: 8px; margin: 5px; }
-        .debug { background: #fff3cd; padding: 15px; margin: 10px 0; border-radius: 4px; font-family: monospace; }
-        .success { color: green; }
-        .error { color: red; }
-        .info { color: blue; }
-        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        .config input { width: 500px; padding: 8px; margin: 5px; display: block; }
+        .debug { background: #fff3cd; padding: 15px; margin: 10px 0; border-radius: 4px; font-family: monospace; white-space: pre-wrap; }
+        .success { color: green; background: #d4edda; padding: 10px; border-radius: 4px; }
+        .error { color: red; background: #f8d7da; padding: 10px; border-radius: 4px; }
+        .info { color: blue; background: #cce5ff; padding: 10px; border-radius: 4px; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
     </style>
 </head>
 <body>
+    <h1>Supabase 数据查看器 - 直接解决方案</h1>
+    
     <div class="config">
-        <h3>Supabase 配置调试</h3>
+        <h3>第1步：配置 Supabase 连接</h3>
         <div>
-            <label>Supabase URL:</label><br>
-            <input type="text" id="supabaseUrl" placeholder="https://your-project.supabase.co">
+            <label><strong>Supabase URL:</strong> (在 Supabase 项目设置 → API 中获取)</label>
+            <input type="text" id="supabaseUrl" placeholder="https://your-project-ref.supabase.co">
         </div>
         <div>
-            <label>Anon Key:</label><br>
+            <label><strong>Anon Key:</strong> (在 Supabase 项目设置 → API 中获取)</label>
             <input type="text" id="supabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
         </div>
         <div>
-            <label>表名:</label><br>
-            <input type="text" id="tableName" placeholder="输入表名">
+            <label><strong>表名:</strong> (您想要查看的表名称)</label>
+            <input type="text" id="tableName" placeholder="取信异常设备清单">
         </div>
-        <button onclick="testConnection()">测试连接</button>
-        <button onclick="listAllTables()">查看所有表</button>
-        <button onclick="checkTableStructure()">检查表结构</button>
-        <button onclick="loadTableData()">加载数据</button>
+        
+        <h3>第2步：执行操作</h3>
+        <button onclick="directTest()">直接测试数据连接</button>
+        <button onclick="fixRLS()" style="background: #28a745;">修复RLS权限</button>
+        <button onclick="createSampleTable()" style="background: #ffc107; color: black;">创建测试表</button>
     </div>
 
     <div id="debug-info" class="debug"></div>
@@ -45,226 +51,193 @@
 
         function getConfig() {
             return {
-                url: document.getElementById('supabaseUrl').value,
-                key: document.getElementById('supabaseKey').value,
-                table: document.getElementById('tableName').value
+                url: document.getElementById('supabaseUrl').value.trim(),
+                key: document.getElementById('supabaseKey').value.trim(),
+                table: document.getElementById('tableName').value.trim()
             };
         }
 
         function initSupabase() {
             const config = getConfig();
             if (!config.url || !config.key) {
-                showDebug('请填写 Supabase URL 和 Key', 'error');
+                showDebug('❌ 请填写 Supabase URL 和 Key', 'error');
                 return null;
             }
+            
+            // 保存配置到本地存储
+            localStorage.setItem('supabase_url', config.url);
+            localStorage.setItem('supabase_key', config.key);
+            localStorage.setItem('current_table', config.table);
             
             try {
                 supabase = window.supabase.createClient(config.url, config.key);
+                showDebug('✅ Supabase 客户端已初始化', 'success');
                 return supabase;
             } catch (error) {
-                showDebug('初始化失败: ' + error.message, 'error');
+                showDebug('❌ 初始化失败: ' + error.message, 'error');
                 return null;
             }
         }
 
-        async function listAllTables() {
-            if (!initSupabase()) return;
-
-            showDebug('正在获取数据库中的所有表...', 'info');
-            
-            try {
-                // 方法1: 通过查询信息模式获取表列表
-                const { data, error } = await supabase
-                    .from('_tables')  // Supabase 的系统表
-                    .select('*')
-                    .limit(50);
-
-                if (error) {
-                    // 如果方法1失败，尝试方法2
-                    await listTablesAlternative();
-                    return;
-                }
-
-                if (data && data.length > 0) {
-                    showDebug(`找到 ${data.length} 个表:`, 'success');
-                    data.forEach(table => {
-                        showDebug(`- ${table.name}`, 'info');
-                    });
-                } else {
-                    showDebug('未找到任何表', 'error');
-                }
-            } catch (error) {
-                showDebug('获取表列表失败: ' + error.message, 'error');
-            }
-        }
-
-        async function listTablesAlternative() {
-            try {
-                // 尝试查询一个不存在的表来触发错误，从错误信息中获取提示
-                const { error } = await supabase
-                    .from('nonexistent_table')
-                    .select('*')
-                    .limit(1);
-
-                if (error && error.message) {
-                    showDebug('无法直接获取表列表，请手动输入表名。错误信息: ' + error.message, 'error');
-                }
-            } catch (error) {
-                showDebug('备选方法也失败: ' + error.message, 'error');
-            }
-        }
-
-        async function checkTableStructure() {
+        async function directTest() {
+            clearDebug();
             const config = getConfig();
+            
             if (!config.table) {
-                showDebug('请先输入表名', 'error');
+                showDebug('❌ 请输入表名', 'error');
                 return;
             }
 
             if (!initSupabase()) return;
 
-            showDebug(`正在检查表 "${config.table}" 的结构...`, 'info');
+            showDebug(`🔍 正在直接测试表 "${config.table}"...`, 'info');
 
             try {
+                // 直接查询数据，不进行复杂的连接测试
                 const { data, error } = await supabase
                     .from(config.table)
                     .select('*')
-                    .limit(1);
+                    .limit(50);
 
                 if (error) {
+                    showDebug(`❌ 查询失败: ${error.message}`, 'error');
+                    
+                    // 提供具体的解决方案
                     if (error.message.includes('does not exist')) {
-                        showDebug(`错误: 表 "${config.table}" 不存在`, 'error');
+                        showDebug(`
+💡 解决方案:
+1. 表名 "${config.table}" 可能不存在
+2. 请在 Supabase Table Editor 中确认表名
+3. 或者点击"创建测试表"按钮创建一个示例表
+                        `, 'info');
                     } else if (error.message.includes('JWT')) {
-                        showDebug('错误: API Key 无效', 'error');
-                    } else {
-                        showDebug('查询错误: ' + error.message, 'error');
+                        showDebug(`
+💡 解决方案:
+1. 检查 Supabase URL 和 Anon Key 是否正确
+2. 在 Supabase 项目设置 → API 中获取正确的信息
+                        `, 'info');
+                    } else if (error.message.includes('row-level security')) {
+                        showDebug(`
+💡 解决方案:
+1. RLS (行级安全) 策略阻止了访问
+2. 点击"修复RLS权限"按钮来解决问题
+                        `, 'info');
                     }
                     return;
                 }
 
                 if (data && data.length > 0) {
-                    const firstRow = data[0];
-                    const columns = Object.keys(firstRow);
-                    
-                    showDebug(`表 "${config.table}" 结构:`, 'success');
-                    columns.forEach(col => {
-                        const value = firstRow[col];
-                        showDebug(`- ${col}: ${typeof value} (示例值: ${value})`, 'info');
-                    });
+                    showDebug(`✅ 成功! 找到 ${data.length} 条记录`, 'success');
+                    renderTable(data);
                 } else {
-                    showDebug(`表 "${config.table}" 存在但为空`, 'error');
+                    showDebug(`ℹ️ 表 "${config.table}" 存在但是空的`, 'info');
+                    showDebug(`
+💡 建议操作:
+1. 在 Supabase Table Editor 中手动添加数据
+2. 或者点击"创建测试表"按钮创建带示例数据的表
+                    `, 'info');
                 }
-            } catch (error) {
-                showDebug('检查表结构失败: ' + error.message, 'error');
-            }
-        }
-
-        async function testConnection() {
-            const config = getConfig();
-            showDebug('正在测试连接...', 'info');
-            
-            if (!initSupabase()) return;
-
-            try {
-                // 测试基本连接
-                const { data, error } = await supabase
-                    .from('_health')  // Supabase 的健康检查表
-                    .select('*')
-                    .limit(1);
-
-                if (error) {
-                    // 如果健康检查表不存在，尝试其他方法
-                    await testConnectionAlternative();
-                    return;
-                }
-
-                showDebug('连接成功! Supabase 服务正常', 'success');
                 
             } catch (error) {
-                showDebug('连接测试失败: ' + error.message, 'error');
+                showDebug('❌ 测试失败: ' + error.message, 'error');
             }
         }
 
-        async function testConnectionAlternative() {
-            try {
-                // 尝试获取数据库时间
-                const { data, error } = await supabase.rpc('get_time');
-                
-                if (error) {
-                    showDebug('基础连接测试失败: ' + error.message, 'error');
-                } else {
-                    showDebug('连接成功! RPC 功能正常', 'success');
-                }
-            } catch (error) {
-                showDebug('备选连接测试也失败: ' + error.message, 'error');
-            }
-        }
-
-        async function loadTableData() {
+        async function fixRLS() {
             const config = getConfig();
-            const container = document.getElementById('data-container');
             
             if (!config.table) {
-                showDebug('请先输入表名', 'error');
+                showDebug('❌ 请输入表名', 'error');
                 return;
             }
 
             if (!initSupabase()) return;
 
-            showDebug(`正在从表 "${config.table}" 加载数据...`, 'info');
-            container.innerHTML = '<p>加载中...</p>';
+            showDebug(`🛠️ 正在修复表 "${config.table}" 的RLS权限...`, 'info');
 
             try {
                 // 首先检查表是否存在
                 const { data, error } = await supabase
                     .from(config.table)
                     .select('*')
-                    .limit(100);
+                    .limit(1);
 
-                if (error) {
-                    showDebug('查询失败: ' + error.message, 'error');
-                    container.innerHTML = `<p class="error">错误: ${error.message}</p>`;
+                if (error && error.message.includes('does not exist')) {
+                    showDebug(`❌ 表 "${config.table}" 不存在，无法修复RLS`, 'error');
                     return;
                 }
 
-                if (!data || data.length === 0) {
-                    showDebug(`表 "${config.table}" 查询成功，但返回 0 条记录`, 'error');
-                    container.innerHTML = '<p>表中没有数据</p>';
-                    
-                    // 建议用户检查的内容
-                    showDebug(`
-可能的原因:
-1. 表名不正确
-2. RLS (行级安全) 策略限制
-3. 表确实为空
-4. 认证问题
+                showDebug(`
+📋 请在 Supabase SQL 编辑器中执行以下命令来修复权限：
 
-建议操作:
-1. 点击"查看所有表"确认表名
-2. 在 Supabase 控制台检查 RLS 策略
-3. 在 Supabase SQL 编辑器中直接查询数据
-                    `, 'info');
-                    return;
-                }
+-- 方案1: 完全禁用RLS（最简单）
+ALTER TABLE ${config.table} DISABLE ROW LEVEL SECURITY;
 
-                showDebug(`成功加载 ${data.length} 条记录`, 'success');
-                renderTable(data, container);
-                
+-- 方案2: 启用RLS但允许所有操作
+ALTER TABLE ${config.table} ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "允许所有操作" ON ${config.table} FOR ALL USING (true);
+
+-- 方案3: 仅允许查询（推荐用于生产）
+ALTER TABLE ${config.table} ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "允许查询" ON ${config.table} FOR SELECT USING (true);
+
+执行完成后，点击"直接测试数据连接"按钮重新测试。
+                `, 'info');
+
             } catch (error) {
-                showDebug('加载数据失败: ' + error.message, 'error');
-                container.innerHTML = `<p class="error">加载失败: ${error.message}</p>`;
+                showDebug('❌ 修复RLS时出错: ' + error.message, 'error');
             }
         }
 
-        function renderTable(data, container) {
+        async function createSampleTable() {
+            const config = getConfig();
+            
+            if (!config.table) {
+                showDebug('❌ 请输入要创建的表名', 'error');
+                return;
+            }
+
+            showDebug(`
+📋 请在 Supabase SQL 编辑器中执行以下命令来创建示例表：
+
+-- 创建表结构
+CREATE TABLE IF NOT EXISTS ${config.table} (
+    id BIGSERIAL PRIMARY KEY,
+    序号 VARCHAR(50),
+    站址名称 VARCHAR(255),
+    站址运维ID VARCHAR(100),
+    设备名称 VARCHAR(255),
+    省 VARCHAR(50),
+    市 VARCHAR(50),
+    缺失信号量 INTEGER,
+    站址状态 VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 禁用RLS以便访问
+ALTER TABLE ${config.table} DISABLE ROW LEVEL SECURITY;
+
+-- 插入示例数据
+INSERT INTO ${config.table} (序号, 站址名称, 站址运维ID, 设备名称, 省, 市, 缺失信号量, 站址状态) VALUES
+('001', '广州天河基站', 'GZ-TH-001', '主设备A', '广东省', '广州市', 5, '正常'),
+('002', '深圳福田站点', 'SZ-FT-002', '备用设备B', '广东省', '深圳市', 3, '异常'),
+('003', '北京朝阳基站', 'BJ-CY-003', '监控设备C', '北京市', '北京市', 8, '正常'),
+('004', '上海浦东站点', 'SH-PD-004', '传输设备D', '上海市', '上海市', 2, '维护中');
+
+创建完成后，点击"直接测试数据连接"按钮查看数据。
+            `, 'info');
+        }
+
+        function renderTable(data) {
+            const container = document.getElementById('data-container');
             const columns = Object.keys(data[0]);
             
             let html = `
-                <h3>数据表: ${getConfig().table} (共 ${data.length} 条记录)</h3>
-                <table border="1" style="border-collapse: collapse; width: 100%;">
+                <h3>📊 数据表: ${getConfig().table} (共 ${data.length} 条记录)</h3>
+                <table>
                     <thead>
-                        <tr style="background: #f0f0f0;">
-                            ${columns.map(col => `<th style="padding: 8px; border: 1px solid #ccc;">${col}</th>`).join('')}
+                        <tr>
+                            ${columns.map(col => `<th>${col}</th>`).join('')}
                         </tr>
                     </thead>
                     <tbody>
@@ -272,7 +245,7 @@
 
             data.forEach(row => {
                 html += `<tr>${columns.map(col => 
-                    `<td style="padding: 8px; border: 1px solid #ccc;" title="${row[col]}">${formatValue(row[col])}</td>`
+                    `<td title="${row[col]}">${formatValue(row[col])}</td>`
                 ).join('')}</tr>`;
             });
 
@@ -284,23 +257,21 @@
             if (value === null || value === undefined) return '<em style="color: #999;">null</em>';
             if (typeof value === 'object') return JSON.stringify(value);
             const str = value.toString();
-            return str.length > 100 ? str.substring(0, 100) + '...' : str;
+            return str.length > 50 ? str.substring(0, 50) + '...' : str;
         }
 
         function showDebug(message, type = 'info') {
             const debugDiv = document.getElementById('debug-info');
-            const timestamp = new Date().toLocaleTimeString();
-            debugDiv.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            debugDiv.innerHTML += `<div class="${type}">${message}</div>`;
             debugDiv.scrollTop = debugDiv.scrollHeight;
-            console.log(`[${type.toUpperCase()}] ${message}`);
         }
 
-        // 清空调试信息
         function clearDebug() {
             document.getElementById('debug-info').innerHTML = '';
+            document.getElementById('data-container').innerHTML = '';
         }
 
-        // 页面加载时尝试从本地存储加载配置
+        // 页面加载时恢复配置
         document.addEventListener('DOMContentLoaded', function() {
             const savedUrl = localStorage.getItem('supabase_url');
             const savedKey = localStorage.getItem('supabase_key');
@@ -311,5 +282,24 @@
             if (savedTable) document.getElementById('tableName').value = savedTable;
         });
     </script>
+
+    <div style="margin-top: 30px; padding: 20px; background: #e9ecef; border-radius: 8px;">
+        <h3>💡 快速使用指南</h3>
+        <ol>
+            <li><strong>获取 Supabase 配置信息</strong>: 在 Supabase 项目设置 → API 页面找到 URL 和 anon key</li>
+            <li><strong>输入表名</strong>: 输入您想要查看的表名称</li>
+            <li><strong>点击"直接测试数据连接"</strong>: 这会直接尝试读取数据</li>
+            <li><strong>如果遇到权限问题</strong>: 点击"修复RLS权限"并按照说明操作</li>
+            <li><strong>如果表不存在</strong>: 点击"创建测试表"并按照说明操作</li>
+        </ol>
+        
+        <h3>🔧 常见问题解决方案</h3>
+        <ul>
+            <li><strong>表不存在</strong>: 使用"创建测试表"功能</li>
+            <li><strong>权限被拒绝</strong>: 使用"修复RLS权限"功能</li>
+            <li><strong>连接失败</strong>: 检查 URL 和 Key 是否正确</li>
+            <li><strong>表存在但无数据</strong>: 在 Supabase Table Editor 中添加数据</li>
+        </ul>
+    </div>
 </body>
 </html>
