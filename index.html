@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>用户数据仪表板</title>
-    <script src="https://unpkg.com/@supabase/supabase-js"></script>
+    <title>数据仪表板</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; padding: 20px; background: #f5f5f5; }
@@ -19,53 +19,561 @@
         .tab { overflow: hidden; border-bottom: 1px solid #ccc; margin-bottom: 20px; }
         .tab button { background: transparent; color: black; border: none; border-bottom: 2px solid transparent; }
         .tab button.active { border-bottom-color: #3b82f6; color: #3b82f6; }
-        .logout-btn { background: #ef4444; float: right; }
-        .logout-btn:hover { background: #dc2626; }
+        .user-info { background: #dbeafe; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
+        .status-message { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .status-success { background: #dcfce7; color: #166534; }
+        .status-error { background: #fee2e2; color: #dc2626; }
+        .data-preview { max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; padding: 10px; margin: 10px 0; background: #f9fafb; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="auth-section" class="card">
-            <h2>登录 / 注册</h2>
-            <input type="email" id="email" placeholder="邮箱地址">
-            <input type="password" id="password" placeholder="密码">
-            <button onclick="handleLogin()">登录</button>
-            <button onclick="handleSignUp()">注册</button>
+        <div id="loading-section" class="card">
+            <h2>正在初始化...</h2>
+            <p>请稍等，系统正在自动登录</p>
         </div>
 
         <div id="dashboard-section" class="card hidden">
+            <div class="user-info" id="user-info">
+                <!-- 用户信息将在这里显示 -->
+            </div>
             <div class="tab">
                 <button class="tab-button active" onclick="openTab('data-view')">数据查看</button>
                 <button class="tab-button" onclick="openTab('import')">数据导入</button>
                 <button class="tab-button" onclick="openTab('export')">数据导出</button>
-                <button class="logout-btn" onclick="handleLogout()">退出登录</button>
+                <button class="tab-button" onclick="openTab('settings')">系统设置</button>
             </div>
 
             <!-- 数据查看标签页 -->
             <div id="data-view" class="tab-content">
-                <h3>我的报表数据</h3>
+                <h3>数据管理</h3>
+                <div style="margin-bottom: 20px;">
+                    <button onclick="addSampleData()">添加示例数据</button>
+                    <button onclick="clearAllData()" style="background: #ef4444;">清空所有数据</button>
+                </div>
                 <div id="reports-list"></div>
             </div>
 
             <!-- 数据导入标签页 -->
             <div id="import" class="tab-content hidden">
-                <h3>导入数据</h3>
-                <input type="file" id="file-input" accept=".json,.csv">
-                <input type="text" id="report-name" placeholder="报表名称">
-                <button onclick="handleImport()">导入数据</button>
-                <div id="import-preview"></div>
+                <h3>数据导入</h3>
+                <div style="margin-bottom: 15px;">
+                    <input type="text" id="report-name" placeholder="输入报表名称（可选）">
+                    <input type="file" id="file-input" accept=".json,.csv,.txt">
+                    <button onclick="handleImport()">导入数据</button>
+                </div>
+                <div id="import-preview" class="data-preview"></div>
             </div>
 
             <!-- 数据导出标签页 -->
             <div id="export" class="tab-content hidden">
-                <h3>导出数据</h3>
-                <button onclick="exportAsJSON()">导出为 JSON</button>
-                <button onclick="exportAsCSV()">导出为 CSV</button>
+                <h3>数据导出</h3>
+                <div style="margin-bottom: 15px;">
+                    <button onclick="exportAsJSON()">导出为 JSON</button>
+                    <button onclick="exportAsCSV()">导出为 CSV</button>
+                    <button onclick="exportAsTXT()">导出为 TXT</button>
+                </div>
                 <div id="export-result"></div>
             </div>
+
+            <!-- 系统设置标签页 -->
+            <div id="settings" class="tab-content hidden">
+                <h3>系统信息</h3>
+                <div class="user-info">
+                    <p><strong>当前会话:</strong> <span id="session-status">已激活</span></p>
+                    <p><strong>用户ID:</strong> <span id="user-id">加载中...</span></p>
+                    <p><strong>数据表:</strong> <span id="table-status">user_reports</span></p>
+                </div>
+                <button onclick="refreshData()" style="background: #10b981;">刷新数据</button>
+                <button onclick="resetSystem()" style="background: #f59e0b;">重置演示数据</button>
+            </div>
+        </div>
+
+        <div id="error-section" class="card hidden">
+            <h2>系统错误</h2>
+            <p id="error-message"></p>
+            <button onclick="retryConnection()">重新连接</button>
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script>
+        // Supabase 配置 - 需要替换为您的实际配置
+        const SUPABASE_URL = 'https://your-project.supabase.co';
+        const SUPABASE_ANON_KEY = 'your-anon-key';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // 自动登录和初始化
+        let currentUser = null;
+
+        async function initializeApp() {
+            try {
+                showLoading('正在连接数据库...');
+                
+                // 尝试获取现有会话
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                
+                if (session) {
+                    // 已有会话，直接使用
+                    currentUser = session.user;
+                    showDashboard();
+                } else {
+                    // 没有会话，自动创建匿名用户
+                    await createAnonymousUser();
+                }
+                
+            } catch (error) {
+                showError('初始化失败: ' + error.message);
+            }
+        }
+
+        async function createAnonymousUser() {
+            showLoading('正在创建用户会话...');
+            
+            // 生成随机匿名用户
+            const randomId = Math.random().toString(36).substring(2, 10);
+            const anonymousEmail = `user_${randomId}@demo.app`;
+            const anonymousPassword = `pass_${randomId}_${Date.now()}`;
+            
+            const { data, error } = await supabase.auth.signUp({
+                email: anonymousEmail,
+                password: anonymousPassword,
+                options: {
+                    emailConfirm: false, // 禁用邮箱验证
+                    data: {
+                        is_anonymous: true,
+                        created_at: new Date().toISOString()
+                    }
+                }
+            });
+
+            if (error) {
+                // 如果注册失败，尝试直接登录（用户可能已存在）
+                const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                    email: anonymousEmail,
+                    password: anonymousPassword
+                });
+                
+                if (signInError) {
+                    throw new Error('自动登录失败: ' + signInError.message);
+                }
+                
+                currentUser = signInData.user;
+            } else {
+                currentUser = data.user;
+            }
+            
+            showDashboard();
+        }
+
+        function showLoading(message = '加载中...') {
+            document.getElementById('loading-section').classList.remove('hidden');
+            document.getElementById('dashboard-section').classList.add('hidden');
+            document.getElementById('error-section').classList.add('hidden');
+            
+            const loadingElement = document.getElementById('loading-section');
+            loadingElement.innerHTML = `<h2>${message}</h2><p>请稍候...</p>`;
+        }
+
+        function showDashboard() {
+            document.getElementById('loading-section').classList.add('hidden');
+            document.getElementById('dashboard-section').classList.remove('hidden');
+            document.getElementById('error-section').classList.add('hidden');
+            
+            // 显示用户信息
+            if (currentUser) {
+                document.getElementById('user-info').innerHTML = `
+                    <strong>演示模式</strong> | 用户: ${currentUser.email.substring(0, 15)}... | 
+                    <small>ID: ${currentUser.id.substring(0, 8)}...</small>
+                `;
+                document.getElementById('user-id').textContent = currentUser.id;
+            }
+            
+            loadUserData();
+        }
+
+        function showError(message) {
+            document.getElementById('loading-section').classList.add('hidden');
+            document.getElementById('dashboard-section').classList.add('hidden');
+            document.getElementById('error-section').classList.remove('hidden');
+            
+            document.getElementById('error-message').textContent = message;
+        }
+
+        function openTab(tabName) {
+            // 隐藏所有标签内容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            
+            // 移除所有标签按钮的active类
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+            
+            // 显示选中的标签内容
+            document.getElementById(tabName).classList.remove('hidden');
+            
+            // 激活选中的标签按钮
+            event.target.classList.add('active');
+        }
+
+        // 数据管理函数
+        async function loadUserData() {
+            if (!currentUser) return;
+
+            try {
+                const { data, error } = await supabase
+                    .from('user_reports')
+                    .select('*')
+                    .eq('user_id', currentUser.id)
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    console.error('加载数据错误:', error);
+                    showStatus('加载数据时出错: ' + error.message, 'error');
+                    return;
+                }
+
+                const reportsList = document.getElementById('reports-list');
+                if (!data || data.length === 0) {
+                    reportsList.innerHTML = `
+                        <div class="status-message">
+                            <p>暂无数据，点击"添加示例数据"开始使用</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                reportsList.innerHTML = data.map(report => `
+                    <div class="report-item">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <h4>${report.report_name || '未命名报表'}</h4>
+                            <button onclick="deleteReport('${report.id}')" style="background: #ef4444; padding: 5px 10px; font-size: 12px;">删除</button>
+                        </div>
+                        <p><strong>数据量:</strong> ${getDataCount(report.data)} 条记录</p>
+                        <p><strong>创建时间:</strong> ${new Date(report.created_at).toLocaleString()}</p>
+                        <div class="data-preview">
+                            <pre>${JSON.stringify(report.data, null, 2)}</pre>
+                        </div>
+                    </div>
+                `).join('');
+                
+                showStatus(`已加载 ${data.length} 个报表`, 'success');
+                
+            } catch (error) {
+                showStatus('加载数据失败: ' + error.message, 'error');
+            }
+        }
+
+        function getDataCount(data) {
+            if (Array.isArray(data)) return data.length;
+            if (typeof data === 'object') return Object.keys(data).length;
+            return 1;
+        }
+
+        function showStatus(message, type = 'success') {
+            const statusElement = document.createElement('div');
+            statusElement.className = `status-message status-${type}`;
+            statusElement.textContent = message;
+            
+            // 移除旧的状态消息
+            const oldStatus = document.querySelector('.status-message');
+            if (oldStatus) oldStatus.remove();
+            
+            // 添加到页面顶部
+            document.querySelector('.container').insertBefore(statusElement, document.querySelector('.card'));
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                if (statusElement.parentNode) {
+                    statusElement.remove();
+                }
+            }, 3000);
+        }
+
+        async function addSampleData() {
+            if (!currentUser) return;
+
+            const sampleReports = [
+                {
+                    name: '用户统计数据',
+                    data: {
+                        totalUsers: 156,
+                        activeUsers: 89,
+                        newRegistrations: 23,
+                        metrics: {
+                            retentionRate: '78%',
+                            growthRate: '12.5%',
+                            engagementScore: 4.2
+                        }
+                    }
+                },
+                {
+                    name: '销售数据',
+                    data: {
+                        monthlyRevenue: 125000,
+                        topProducts: [
+                            { name: '产品A', sales: 45000 },
+                            { name: '产品B', sales: 38000 },
+                            { name: '产品C', sales: 22000 }
+                        ],
+                        regions: {
+                            north: 45000,
+                            south: 38000,
+                            east: 22000,
+                            west: 20000
+                        }
+                    }
+                },
+                {
+                    name: '项目进度',
+                    data: {
+                        completed: 12,
+                        inProgress: 8,
+                        pending: 5,
+                        deadlines: {
+                            '项目X': '2024-03-15',
+                            '项目Y': '2024-03-22',
+                            '项目Z': '2024-04-01'
+                        }
+                    }
+                }
+            ];
+
+            try {
+                for (const report of sampleReports) {
+                    const { error } = await supabase
+                        .from('user_reports')
+                        .insert([
+                            {
+                                user_id: currentUser.id,
+                                report_name: report.name,
+                                data: report.data
+                            }
+                        ]);
+
+                    if (error) {
+                        throw error;
+                    }
+                }
+                
+                showStatus('示例数据添加成功！', 'success');
+                loadUserData();
+                
+            } catch (error) {
+                showStatus('添加示例数据错误: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteReport(reportId) {
+            if (!confirm('确定要删除这个报表吗？')) return;
+
+            try {
+                const { error } = await supabase
+                    .from('user_reports')
+                    .delete()
+                    .eq('id', reportId);
+
+                if (error) {
+                    throw error;
+                }
+                
+                showStatus('报表删除成功', 'success');
+                loadUserData();
+                
+            } catch (error) {
+                showStatus('删除错误: ' + error.message, 'error');
+            }
+        }
+
+        async function clearAllData() {
+            if (!confirm('确定要清空所有数据吗？此操作不可撤销！')) return;
+
+            try {
+                const { error } = await supabase
+                    .from('user_reports')
+                    .delete()
+                    .eq('user_id', currentUser.id);
+
+                if (error) {
+                    throw error;
+                }
+                
+                showStatus('所有数据已清空', 'success');
+                loadUserData();
+                
+            } catch (error) {
+                showStatus('清空数据错误: ' + error.message, 'error');
+            }
+        }
+
+        async function handleImport() {
+            const fileInput = document.getElementById('file-input');
+            const reportName = document.getElementById('report-name').value;
+            
+            if (!fileInput.files[0]) {
+                showStatus('请选择要导入的文件', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            
+            try {
+                const text = await file.text();
+                let jsonData;
+                
+                if (file.name.endsWith('.csv')) {
+                    // 简单的 CSV 解析
+                    const lines = text.split('\n').filter(line => line.trim());
+                    const headers = lines[0].split(',').map(h => h.trim());
+                    jsonData = lines.slice(1).map(line => {
+                        const values = line.split(',').map(v => v.trim());
+                        const obj = {};
+                        headers.forEach((header, index) => {
+                            obj[header] = values[index] || '';
+                        });
+                        return obj;
+                    }).filter(obj => Object.values(obj).some(val => val !== ''));
+                } else {
+                    jsonData = JSON.parse(text);
+                }
+
+                // 显示预览
+                document.getElementById('import-preview').innerHTML = `
+                    <h4>数据预览 (前5条):</h4>
+                    <pre>${JSON.stringify(jsonData.slice(0, 5), null, 2)}</pre>
+                    <p>总计: ${Array.isArray(jsonData) ? jsonData.length : 1} 条记录</p>
+                `;
+
+                const { error } = await supabase
+                    .from('user_reports')
+                    .insert([
+                        {
+                            user_id: currentUser.id,
+                            report_name: reportName || `导入数据 ${new Date().toLocaleString()}`,
+                            data: jsonData
+                        }
+                    ]);
+
+                if (error) {
+                    throw error;
+                }
+                
+                showStatus('数据导入成功！', 'success');
+                fileInput.value = '';
+                document.getElementById('report-name').value = '';
+                loadUserData();
+                
+            } catch (error) {
+                showStatus('导入错误: ' + error.message, 'error');
+            }
+        }
+
+        async function exportAsJSON() {
+            await exportData('json');
+        }
+
+        async function exportAsCSV() {
+            await exportData('csv');
+        }
+
+        async function exportAsTXT() {
+            await exportData('txt');
+        }
+
+        async function exportData(format) {
+            if (!currentUser) return;
+
+            try {
+                const { data, error } = await supabase
+                    .from('user_reports')
+                    .select('*')
+                    .eq('user_id', currentUser.id);
+
+                if (error) {
+                    throw error;
+                }
+
+                if (!data || data.length === 0) {
+                    showStatus('没有数据可导出', 'error');
+                    return;
+                }
+
+                let content, mimeType, extension;
+
+                switch (format) {
+                    case 'json':
+                        content = JSON.stringify(data, null, 2);
+                        mimeType = 'application/json';
+                        extension = 'json';
+                        break;
+                    case 'csv':
+                        content = convertToCSV(data);
+                        mimeType = 'text/csv';
+                        extension = 'csv';
+                        break;
+                    case 'txt':
+                        content = convertToTXT(data);
+                        mimeType = 'text/plain';
+                        extension = 'txt';
+                        break;
+                }
+
+                const blob = new Blob([content], { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `data-export-${new Date().toISOString().split('T')[0]}.${extension}`;
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                showStatus(`数据已导出为 ${format.toUpperCase()} 格式`, 'success');
+                
+            } catch (error) {
+                showStatus('导出错误: ' + error.message, 'error');
+            }
+        }
+
+        function convertToCSV(data) {
+            if (!data.length) return '';
+            
+            const headers = ['报告名称', '创建时间', '数据内容'];
+            const rows = data.map(item => [
+                `"${item.report_name || ''}"`,
+                `"${item.created_at}"`,
+                `"${JSON.stringify(item.data).replace(/"/g, '""')}"`
+            ]);
+            
+            return [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+        }
+
+        function convertToTXT(data) {
+            return data.map(item => 
+                `报告名称: ${item.report_name || '未命名'}\n` +
+                `创建时间: ${item.created_at}\n` +
+                `数据内容:\n${JSON.stringify(item.data, null, 2)}\n` +
+                '─'.repeat(50) + '\n'
+            ).join('\n');
+        }
+
+        function refreshData() {
+            loadUserData();
+        }
+
+        async function resetSystem() {
+            if (!confirm('确定要重置所有演示数据吗？这将清空当前所有数据并重新生成示例数据。')) return;
+            
+            await clearAllData();
+            setTimeout(() => addSampleData(), 1000);
+        }
+
+        function retryConnection() {
+            initializeApp();
+        }
+
+        // 页面加载时自动初始化
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
 </body>
 </html>
