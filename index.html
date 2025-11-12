@@ -37,17 +37,37 @@
         .pagination { display: flex; justify-content: center; margin: 20px 0; }
         .pagination button { margin: 0 5px; }
         .search-box { margin: 10px 0; padding: 8px; width: 300px; border: 1px solid #d1d5db; border-radius: 4px; }
+        .config-section { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="card">
+        <div id="config-section" class="card config-section">
+            <h3>Supabase 配置</h3>
+            <div class="form-group">
+                <label>Supabase URL:</label>
+                <input type="text" id="supabase-url" placeholder="https://umcobpyncbalzwquaers.supabase.co" style="width: 400px;">
+            </div>
+            <div class="form-group">
+                <label>Supabase Anon Key:</label>
+                <input type="text" id="supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3NzMzMzMsImV4cCI6MjA3ODM0OTMzM30.VCZRjCDgVwNXu3e6Etmx6ppLBkIif_kbIE7IFRhU8OU" style="width: 400px;">
+            </div>
+            <div class="form-group">
+                <label>表名:</label>
+                <input type="text" id="table-name" value="取信异常设备清单" placeholder="输入表名">
+            </div>
+            <button onclick="initSupabase()" class="success">初始化连接</button>
+            <button onclick="testConnection()">测试连接</button>
+            <div id="config-status" style="margin-top: 10px;"></div>
+        </div>
+
+        <div id="app-section" class="card hidden">
             <h1>数据管理系统</h1>
             <div class="tab">
                 <button class="tab-button active" onclick="openTab('data-view')">数据查看</button>
                 <button class="tab-button" onclick="openTab('import')">数据导入</button>
                 <button class="tab-button" onclick="openTab('export')">数据导出</button>
-                <button class="tab-button" onclick="openTab('settings')">系统设置</button>
+                <button class="tab-button" onclick="openTab('manage')">表管理</button>
             </div>
 
             <!-- 数据查看标签页 -->
@@ -71,10 +91,6 @@
                     <label>选择文件 (CSV/JSON):</label>
                     <input type="file" id="file-input" accept=".csv,.json">
                 </div>
-                <div class="form-group">
-                    <label>目标表名:</label>
-                    <input type="text" id="table-name" placeholder="输入表名">
-                </div>
                 <button onclick="previewImport()">预览数据</button>
                 <button onclick="executeImport()" class="success">执行导入</button>
                 <div id="import-preview" style="margin-top: 20px;"></div>
@@ -84,41 +100,22 @@
             <div id="export" class="tab-content hidden">
                 <h3>数据导出</h3>
                 <div class="form-group">
-                    <label>选择表:</label>
-                    <select id="export-table-select">
-                        <option value="">-- 选择表 --</option>
-                    </select>
-                </div>
-                <div class="form-group">
                     <label>导出格式:</label>
                     <select id="export-format">
                         <option value="json">JSON</option>
                         <option value="csv">CSV</option>
-                        <option value="excel">Excel</option>
                     </select>
                 </div>
                 <button onclick="exportData()">导出数据</button>
                 <div id="export-result" style="margin-top: 20px;"></div>
             </div>
 
-            <!-- 系统设置标签页 -->
-            <div id="settings" class="tab-content hidden">
-                <h3>系统设置</h3>
-                <div class="form-group">
-                    <label>Supabase URL:</label>
-                    <input type="text" id="supabase-url" placeholder="https://umcobpyncbalzwquaers.supabase.co">
-                </div>
-                <div class="form-group">
-                    <label>Supabase Anon Key:</label>
-                    <input type="text" id="supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3NzMzMzMsImV4cCI6MjA3ODM0OTMzM30.VCZRjCDgVwNXu3e6Etmx6ppLBkIif_kbIE7IFRhU8OU">
-                </div>
-                <button onclick="saveSettings()" class="success">保存设置</button>
-                <button onclick="testConnection()">测试连接</button>
-                
-                <div style="margin-top: 20px;">
-                    <h4>数据库表列表</h4>
-                    <div id="table-list"></div>
-                </div>
+            <!-- 表管理标签页 -->
+            <div id="manage" class="tab-content hidden">
+                <h3>表管理</h3>
+                <button onclick="createSampleTable()">创建示例表</button>
+                <button onclick="clearAllData()" class="delete">清空所有数据</button>
+                <div id="table-info" style="margin-top: 20px;"></div>
             </div>
         </div>
     </div>
@@ -136,42 +133,116 @@
     </div>
 
     <script>
-        // 配置
+        // 全局变量
+        let supabase = null;
         let currentTable = '取信异常设备清单';
         let currentPage = 1;
-        const pageSize = 20;
+        const pageSize = 10;
         let allData = [];
-        let tableSchema = {};
+        let tableSchema = [];
 
-        // 初始化
+        // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
-            loadSettings();
-            loadTableList();
+            loadConfig();
         });
 
-        function openTab(tabName) {
-            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
-            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        // 配置函数
+        function loadConfig() {
+            const savedUrl = localStorage.getItem('supabase_url');
+            const savedKey = localStorage.getItem('supabase_key');
+            const savedTable = localStorage.getItem('current_table');
             
-            document.getElementById(tabName).classList.remove('hidden');
-            event.target.classList.add('active');
-
-            if (tabName === 'data-view') {
-                loadTableData();
-            } else if (tabName === 'export') {
-                loadExportTables();
+            if (savedUrl) document.getElementById('supabase-url').value = savedUrl;
+            if (savedKey) document.getElementById('supabase-key').value = savedKey;
+            if (savedTable) {
+                document.getElementById('table-name').value = savedTable;
+                currentTable = savedTable;
             }
+        }
+
+        function saveConfig() {
+            const url = document.getElementById('supabase-url').value;
+            const key = document.getElementById('supabase-key').value;
+            const table = document.getElementById('table-name').value;
+            
+            localStorage.setItem('supabase_url', url);
+            localStorage.setItem('supabase_key', key);
+            localStorage.setItem('current_table', table);
+            currentTable = table;
+        }
+
+        function initSupabase() {
+            saveConfig();
+            
+            const url = document.getElementById('supabase-url').value;
+            const key = document.getElementById('supabase-key').value;
+            
+            if (!url || !key) {
+                showConfigStatus('请填写 URL 和 Key', 'error');
+                return;
+            }
+
+            try {
+                supabase = window.supabase.createClient(url, key);
+                showConfigStatus('Supabase 客户端已初始化', 'success');
+                document.getElementById('app-section').classList.remove('hidden');
+                testConnection();
+            } catch (error) {
+                showConfigStatus('初始化失败: ' + error.message, 'error');
+            }
+        }
+
+        async function testConnection() {
+            if (!supabase) {
+                showConfigStatus('请先初始化 Supabase', 'error');
+                return;
+            }
+
+            try {
+                showConfigStatus('正在测试连接...', 'success');
+                
+                // 测试查询
+                const { data, error } = await supabase
+                    .from(currentTable)
+                    .select('*')
+                    .limit(1);
+
+                if (error) {
+                    if (error.message.includes('does not exist')) {
+                        showConfigStatus(`表 "${currentTable}" 不存在，请先创建表`, 'error');
+                    } else {
+                        throw error;
+                    }
+                } else {
+                    showConfigStatus('连接成功! 可以开始使用系统', 'success');
+                    loadTableData();
+                }
+            } catch (error) {
+                showConfigStatus('连接失败: ' + error.message, 'error');
+                console.error('Connection error:', error);
+            }
+        }
+
+        function showConfigStatus(message, type) {
+            const statusElement = document.getElementById('config-status');
+            statusElement.innerHTML = `<div class="status-${type}" style="padding: 10px; border-radius: 5px;">${message}</div>`;
         }
 
         // 数据操作函数
         async function loadTableData() {
+            if (!supabase) {
+                showStatus('请先配置 Supabase 连接', 'error');
+                return;
+            }
+
             showStatus('正在加载数据...', 'success');
             
             try {
                 const { data, error } = await supabase
                     .from(currentTable)
                     .select('*')
-                    .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
+                    .range((currentPage - 1) * pageSize, currentPage * pageSize - 1)
+                    .order('id', { ascending: false });
 
                 if (error) throw error;
 
@@ -182,40 +253,76 @@
                 
             } catch (error) {
                 showStatus('加载数据失败: ' + error.message, 'error');
+                console.error('Load data error:', error);
             }
         }
 
         function renderTable(data) {
+            const container = document.getElementById('data-table-container');
+            
             if (!data || data.length === 0) {
-                document.getElementById('data-table-container').innerHTML = '<p>暂无数据</p>';
+                container.innerHTML = '<p>暂无数据</p>';
                 return;
             }
 
+            // 获取表头
             const columns = Object.keys(data[0]);
-            let html = `<table>
-                <thead><tr>${columns.map(col => `<th>${col}</th>`).join('')}<th>操作</th></tr></thead>
-                <tbody>`;
+            tableSchema = columns;
 
-            data.forEach((row, index) => {
-                html += `<tr>${columns.map(col => `<td>${row[col] || ''}</td>`).join('')}
-                    <td>
-                        <button class="edit" onclick="editRecord(${row.ID || index})">编辑</button>
-                        <button class="delete" onclick="deleteRecord(${row.ID || index})">删除</button>
-                    </td>
-                </tr>`;
+            let html = `
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                ${columns.map(col => `<th>${col}</th>`).join('')}
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            data.forEach((row) => {
+                html += `
+                    <tr>
+                        ${columns.map(col => `<td>${formatCellValue(row[col])}</td>`).join('')}
+                        <td>
+                            <button class="edit" onclick="editRecord(${row.id})">编辑</button>
+                            <button class="delete" onclick="deleteRecord(${row.id})">删除</button>
+                        </td>
+                    </tr>
+                `;
             });
 
-            html += '</tbody></table>';
-            document.getElementById('data-table-container').innerHTML = html;
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function formatCellValue(value) {
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'object') return JSON.stringify(value);
+            return value.toString();
         }
 
         function renderPagination() {
-            // 简化分页逻辑
+            // 简化分页
             document.getElementById('pagination').innerHTML = `
                 <button ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">上一页</button>
                 <span>第 ${currentPage} 页</span>
                 <button onclick="changePage(${currentPage + 1})">下一页</button>
             `;
+        }
+
+        // 其他函数保持不变（模态框、导入导出等）
+        function openTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            
+            document.getElementById(tabName).classList.remove('hidden');
+            event.target.classList.add('active');
+
+            if (tabName === 'data-view') {
+                loadTableData();
+            }
         }
 
         function changePage(page) {
@@ -228,7 +335,6 @@
             loadTableData();
         }
 
-        // 模态框操作
         function showAddModal() {
             document.getElementById('modal-title').textContent = '添加记录';
             document.getElementById('modal-form').innerHTML = generateForm();
@@ -236,7 +342,7 @@
         }
 
         function editRecord(id) {
-            const record = allData.find(row => row.ID === id);
+            const record = allData.find(row => row.id === id);
             if (!record) return;
 
             document.getElementById('modal-title').textContent = '编辑记录';
@@ -249,19 +355,19 @@
         }
 
         function generateForm(record = {}) {
-            if (allData.length === 0) return '<p>暂无字段信息</p>';
+            if (tableSchema.length === 0) return '<p>暂无字段信息</p>';
             
-            const columns = Object.keys(allData[0]).filter(col => col !== 'ID' && col !== '创建时间' && col !== '更新时间');
+            const columns = tableSchema.filter(col => col !== 'id' && col !== 'created_at' && col !== 'updated_at');
             return columns.map(col => `
                 <div class="form-group">
                     <label>${col}:</label>
-                    <input type="text" id="field-${col}" value="${record[col] || ''}" placeholder="输入${col}">
+                    <input type="text" id="field-${col}" value="${record[col] || ''}" placeholder="输入 ${col}">
                 </div>
             `).join('');
         }
 
         async function saveRecord() {
-            const columns = Object.keys(allData[0]).filter(col => col !== 'ID' && col !== '创建时间' && col !== '更新时间');
+            const columns = tableSchema.filter(col => col !== 'id' && col !== 'created_at' && col !== 'updated_at');
             const formData = {};
             
             columns.forEach(col => {
@@ -273,8 +379,12 @@
                 if (document.getElementById('modal-title').textContent === '添加记录') {
                     result = await supabase.from(currentTable).insert([formData]);
                 } else {
-                    // 编辑逻辑需要根据实际情况调整
-                    result = await supabase.from(currentTable).update(formData);
+                    const recordId = allData.find(row => 
+                        Object.keys(formData).some(key => row[key] === formData[key])
+                    )?.id;
+                    if (recordId) {
+                        result = await supabase.from(currentTable).update(formData).eq('id', recordId);
+                    }
                 }
 
                 if (result.error) throw result.error;
@@ -295,7 +405,7 @@
                 const { error } = await supabase
                     .from(currentTable)
                     .delete()
-                    .eq('ID', id);
+                    .eq('id', id);
 
                 if (error) throw error;
 
@@ -307,165 +417,17 @@
             }
         }
 
-        // 导入导出功能
-        async function previewImport() {
-            const fileInput = document.getElementById('file-input');
-            const tableName = document.getElementById('table-name').value;
-            
-            if (!fileInput.files[0] || !tableName) {
-                showStatus('请选择文件并输入表名', 'error');
-                return;
-            }
-
-            const file = fileInput.files[0];
-            const text = await file.text();
-            let data;
-
-            try {
-                if (file.name.endsWith('.json')) {
-                    data = JSON.parse(text);
-                } else {
-                    data = parseCSV(text);
-                }
-
-                document.getElementById('import-preview').innerHTML = `
-                    <h4>预览数据 (前5条)</h4>
-                    <pre>${JSON.stringify(data.slice(0, 5), null, 2)}</pre>
-                    <p>总计: ${data.length} 条记录</p>
-                `;
-                
-            } catch (error) {
-                showStatus('文件解析错误: ' + error.message, 'error');
-            }
-        }
-
-        function parseCSV(csvText) {
-            const lines = csvText.split('\n').filter(line => line.trim());
-            const headers = lines[0].split(',').map(h => h.trim());
-            
-            return lines.slice(1).map(line => {
-                const values = line.split(',').map(v => v.trim());
-                const obj = {};
-                headers.forEach((header, index) => {
-                    obj[header] = values[index] || '';
-                });
-                return obj;
-            });
-        }
-
-        async function executeImport() {
-            // 实现导入逻辑
-            showStatus('导入功能开发中...', 'success');
-        }
-
-        async function exportData() {
-            const tableName = document.getElementById('export-table-select').value;
-            const format = document.getElementById('export-format').value;
-            
-            if (!tableName) {
-                showStatus('请选择要导出的表', 'error');
-                return;
-            }
-
-            try {
-                const { data, error } = await supabase.from(tableName).select('*');
-                if (error) throw error;
-
-                let content, mimeType, extension;
-                
-                if (format === 'json') {
-                    content = JSON.stringify(data, null, 2);
-                    mimeType = 'application/json';
-                    extension = 'json';
-                } else if (format === 'csv') {
-                    content = convertToCSV(data);
-                    mimeType = 'text/csv';
-                    extension = 'csv';
-                }
-
-                const blob = new Blob([content], { type: mimeType });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${tableName}-${new Date().toISOString().split('T')[0]}.${extension}`;
-                a.click();
-                URL.revokeObjectURL(url);
-                
-                showStatus(`数据已导出为 ${format.toUpperCase()} 格式`, 'success');
-                
-            } catch (error) {
-                showStatus('导出失败: ' + error.message, 'error');
-            }
-        }
-
-        function convertToCSV(data) {
-            if (!data.length) return '';
-            const headers = Object.keys(data[0]);
-            const rows = data.map(row => 
-                headers.map(header => `"${(row[header] || '').toString().replace(/"/g, '""')}"`).join(',')
-            );
-            return [headers.join(','), ...rows].join('\n');
-        }
-
-        // 系统设置
-        function loadSettings() {
-            const url = localStorage.getItem('supabase_url') || 'https://your-project.supabase.co';
-            const key = localStorage.getItem('supabase_key') || 'your-anon-key';
-            
-            document.getElementById('supabase-url').value = url;
-            document.getElementById('supabase-key').value = key;
-            
-            window.supabase = window.supabase.createClient(url, key);
-        }
-
-        function saveSettings() {
-            const url = document.getElementById('supabase-url').value;
-            const key = document.getElementById('supabase-key').value;
-            
-            localStorage.setItem('supabase_url', url);
-            localStorage.setItem('supabase_key', key);
-            
-            window.supabase = window.supabase.createClient(url, key);
-            showStatus('设置已保存', 'success');
-        }
-
-        async function testConnection() {
-            try {
-                const { data, error } = await supabase.from('取信异常设备清单').select('count').limit(1);
-                if (error) throw error;
-                showStatus('连接成功', 'success');
-            } catch (error) {
-                showStatus('连接失败: ' + error.message, 'error');
-            }
-        }
-
-        async function loadTableList() {
-            // 这里需要根据实际情况加载表列表
-            // 简化实现，假设我们知道表名
-            document.getElementById('table-list').innerHTML = `
-                <ul>
-                    <li>取信异常设备清单</li>
-                    <li>其他表...</li>
-                </ul>
-            `;
-        }
-
-        function loadExportTables() {
-            document.getElementById('export-table-select').innerHTML = `
-                <option value="取信异常设备清单">取信异常设备清单</option>
-                <option value="其他表">其他表</option>
-            `;
-        }
-
         function showStatus(message, type) {
-            const statusElement = document.createElement('div');
+            // 创建或更新状态消息
+            let statusElement = document.querySelector('.status-message');
+            if (!statusElement) {
+                statusElement = document.createElement('div');
+                statusElement.className = 'status-message';
+                document.querySelector('.container').insertBefore(statusElement, document.querySelector('.card'));
+            }
+            
             statusElement.className = `status-message status-${type}`;
             statusElement.textContent = message;
-            
-            const oldStatus = document.querySelector('.status-message');
-            if (oldStatus) oldStatus.remove();
-            
-            document.querySelector('.container').insertBefore(statusElement, document.querySelector('.card'));
             
             setTimeout(() => {
                 if (statusElement.parentNode) {
@@ -474,20 +436,59 @@
             }, 3000);
         }
 
-        // 搜索功能
-        document.getElementById('search-input').addEventListener('input', function(e) {
-            const searchTerm = e.target.value.toLowerCase();
-            if (searchTerm) {
-                const filteredData = allData.filter(row => 
-                    Object.values(row).some(value => 
-                        value && value.toString().toLowerCase().includes(searchTerm)
-                    )
-                );
-                renderTable(filteredData);
-            } else {
-                renderTable(allData);
+        // 表管理函数
+        async function createSampleTable() {
+            if (!supabase) {
+                showStatus('请先初始化 Supabase', 'error');
+                return;
             }
-        });
+
+            try {
+                showStatus('正在创建示例表...', 'success');
+                
+                // 这里需要在实际使用中通过 Supabase SQL 编辑器创建表
+                // 暂时使用插入数据的方式
+                const sampleData = {
+                    站址名称: '示例站址',
+                    设备名称: '示例设备',
+                    省: '广东省',
+                    市: '广州市',
+                    缺失信号量: 5,
+                    站址状态: '正常'
+                };
+
+                const { error } = await supabase
+                    .from(currentTable)
+                    .insert([sampleData]);
+
+                if (error) throw error;
+
+                showStatus('示例数据添加成功', 'success');
+                loadTableData();
+                
+            } catch (error) {
+                showStatus('创建失败: ' + error.message, 'error');
+            }
+        }
+
+        async function clearAllData() {
+            if (!confirm('确定要清空所有数据吗？此操作不可逆！')) return;
+
+            try {
+                const { error } = await supabase
+                    .from(currentTable)
+                    .delete()
+                    .neq('id', 0); // 删除所有数据
+
+                if (error) throw error;
+
+                showStatus('数据已清空', 'success');
+                loadTableData();
+                
+            } catch (error) {
+                showStatus('清空失败: ' + error.message, 'error');
+            }
+        }
     </script>
 </body>
 </html>
