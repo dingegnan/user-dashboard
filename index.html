@@ -3,87 +3,201 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supabase 表格查看器</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@^2.39.7"></script>
+    <title>Supabase 数据查看器 - 调试版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
+        .config { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .config input { width: 400px; padding: 8px; margin: 5px; }
         table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-        th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
-        .error { color: red; margin-top: 20px; }
-        .loading { color: #666; }
+        .error { color: red; }
+        .success { color: green; }
+        .debug { background: #fff3cd; padding: 10px; margin: 10px 0; border-radius: 4px; }
     </style>
 </head>
 <body>
-    <h1>Supabase 表格数据查看器</h1>
-    <div id="data-container">
-        <p class="loading">正在加载数据...</p>
+    <div class="config">
+        <h3>Supabase 配置</h3>
+        <div>
+            <label>Supabase URL:</label><br>
+            <input type="text" id="supabaseUrl" placeholder="https://your-project.supabase.co">
+        </div>
+        <div>
+            <label>Anon Key:</label><br>
+            <input type="text" id="supabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+        </div>
+        <div>
+            <label>表名:</label><br>
+            <input type="text" id="tableName" value="取信异常设备清单" placeholder="表名">
+        </div>
+        <button onclick="testConnection()">测试连接</button>
+        <button onclick="loadTableData()">加载数据</button>
     </div>
 
+    <div id="debug-info" class="debug"></div>
+    <div id="data-container"></div>
+
     <script>
-        // 初始化 Supabase 客户端（替换为你的项目信息）
-        const supabaseUrl = 'https://umcobpyncbalzwquaers.supabase.co'; // 替换为你的Supabase URL
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3NzMzMzMsImV4cCI6MjA3ODM0OTMzM30.VCZRjCDgVwNXu3e6Etmx6ppLBkIif_kbIE7IFRhU8OU'; // 替换为你的Anon Key
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+        let supabase = null;
 
-        // 指定要查询的表名
-        const tableName = '取信异常设备清单'; // 替换为你的表名
+        function getConfig() {
+            return {
+                url: document.getElementById('supabaseUrl').value,
+                key: document.getElementById('supabaseKey').value,
+                table: document.getElementById('tableName').value
+            };
+        }
 
-        async function fetchTableData() {
-            const container = document.getElementById('data-container');
+        function initSupabase() {
+            const config = getConfig();
+            if (!config.url || !config.key) {
+                showDebug('请填写 Supabase URL 和 Key');
+                return null;
+            }
             
             try {
-                // 从Supabase查询数据
+                supabase = window.supabase.createClient(config.url, config.key);
+                showDebug('Supabase 客户端初始化成功', 'success');
+                return supabase;
+            } catch (error) {
+                showDebug('初始化失败: ' + error.message, 'error');
+                return null;
+            }
+        }
+
+        async function testConnection() {
+            const config = getConfig();
+            showDebug('正在测试连接...');
+            
+            if (!initSupabase()) return;
+
+            try {
+                // 测试基本连接
                 const { data, error } = await supabase
-                    .from(tableName)
+                    .from(config.table)
                     .select('*')
-                    .limit(100); // 限制返回100条记录，可根据需要调整
+                    .limit(1);
+
+                if (error) {
+                    if (error.code === 'PGRST116') {
+                        showDebug(`表 "${config.table}" 为空`, 'success');
+                    } else if (error.message.includes('does not exist')) {
+                        showDebug(`错误: 表 "${config.table}" 不存在`, 'error');
+                    } else if (error.message.includes('JWT')) {
+                        showDebug('错误: API Key 无效或格式错误', 'error');
+                    } else {
+                        showDebug('连接错误: ' + error.message, 'error');
+                    }
+                } else {
+                    showDebug(`连接成功! 表中有 ${data.length} 条记录`, 'success');
+                }
+            } catch (error) {
+                showDebug('测试连接失败: ' + error.message, 'error');
+            }
+        }
+
+        async function loadTableData() {
+            const config = getConfig();
+            const container = document.getElementById('data-container');
+            
+            if (!initSupabase()) return;
+
+            showDebug('正在加载数据...');
+            container.innerHTML = '<p>加载中...</p>';
+
+            try {
+                // 首先检查表结构
+                const { data: sampleData, error: sampleError } = await supabase
+                    .from(config.table)
+                    .select('*')
+                    .limit(1);
+
+                if (sampleError) {
+                    showDebug('查询失败: ' + sampleError.message, 'error');
+                    container.innerHTML = `<p class="error">错误: ${sampleError.message}</p>`;
+                    return;
+                }
+
+                if (!sampleData || sampleData.length === 0) {
+                    showDebug('表中没有数据', 'error');
+                    container.innerHTML = '<p>表中没有数据</p>';
+                    return;
+                }
+
+                // 获取所有数据
+                const { data, error } = await supabase
+                    .from(config.table)
+                    .select('*')
+                    .order('id', { ascending: false })
+                    .limit(100);
 
                 if (error) {
                     throw error;
                 }
 
-                // 如果成功获取数据，生成表格
-                if (data && data.length > 0) {
-                    const table = document.createElement('table');
-                    
-                    // 创建表头
-                    const thead = document.createElement('thead');
-                    const headerRow = document.createElement('tr');
-                    Object.keys(data[0]).forEach(key => {
-                        const th = document.createElement('th');
-                        th.textContent = key;
-                        headerRow.appendChild(th);
-                    });
-                    thead.appendChild(headerRow);
-                    table.appendChild(thead);
-                    
-                    // 创建表格主体
-                    const tbody = document.createElement('tbody');
-                    data.forEach(rowData => {
-                        const row = document.createElement('tr');
-                        Object.values(rowData).forEach(value => {
-                            const td = document.createElement('td');
-                            td.textContent = value !== null ? value.toString() : 'NULL';
-                            row.appendChild(td);
-                        });
-                        tbody.appendChild(row);
-                    });
-                    table.appendChild(tbody);
-                    
-                    container.innerHTML = ''; // 清空加载提示
-                    container.appendChild(table);
-                } else {
-                    container.innerHTML = '<p>表中没有数据。</p>';
-                }
+                showDebug(`成功加载 ${data.length} 条记录`, 'success');
+                renderTable(data, container);
+                
             } catch (error) {
-                console.error('Error:', error);
+                showDebug('加载数据失败: ' + error.message, 'error');
                 container.innerHTML = `<p class="error">加载失败: ${error.message}</p>`;
             }
         }
 
-        // 页面加载完成后获取数据
-        document.addEventListener('DOMContentLoaded', fetchTableData);
+        function renderTable(data, container) {
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p>没有数据</p>';
+                return;
+            }
+
+            const columns = Object.keys(data[0]);
+            
+            let html = `
+                <h3>数据表: ${getConfig().table} (共 ${data.length} 条记录)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            ${columns.map(col => `<th>${col}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.forEach(row => {
+                html += `<tr>${columns.map(col => 
+                    `<td title="${row[col]}">${formatValue(row[col])}</td>`
+                ).join('')}</tr>`;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function formatValue(value) {
+            if (value === null || value === undefined) return '<em>null</em>';
+            if (typeof value === 'object') return JSON.stringify(value);
+            const str = value.toString();
+            return str.length > 50 ? str.substring(0, 50) + '...' : str;
+        }
+
+        function showDebug(message, type = 'info') {
+            const debugDiv = document.getElementById('debug-info');
+            debugDiv.innerHTML = `<div class="${type}">${message}</div>`;
+            console.log(`[DEBUG] ${message}`);
+        }
+
+        // 页面加载时尝试从本地存储加载配置
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedUrl = localStorage.getItem('supabase_url');
+            const savedKey = localStorage.getItem('supabase_key');
+            const savedTable = localStorage.getItem('current_table');
+            
+            if (savedUrl) document.getElementById('supabaseUrl').value = savedUrl;
+            if (savedKey) document.getElementById('supabaseKey').value = savedKey;
+            if (savedTable) document.getElementById('tableName').value = savedTable;
+        });
     </script>
 </body>
 </html>
