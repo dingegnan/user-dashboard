@@ -34,10 +34,8 @@
         .form-group { margin: 10px 0; }
         .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
         .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; }
-        .pagination { display: flex; justify-content: center; margin: 20px 0; }
-        .pagination button { margin: 0 5px; }
-        .search-box { margin: 10px 0; padding: 8px; width: 300px; border: 1px solid #d1d5db; border-radius: 4px; }
         .config-section { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .search-box { margin: 10px 0; padding: 8px; width: 300px; border: 1px solid #d1d5db; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -46,11 +44,11 @@
             <h3>Supabase 配置</h3>
             <div class="form-group">
                 <label>Supabase URL:</label>
-                <input type="text" id="supabase-url" placeholder="https://umcobpyncbalzwquaers.supabase.co" style="width: 400px;">
+                <input type="text" id="supabase-url" placeholder="https://your-project.supabase.co" style="width: 400px;">
             </div>
             <div class="form-group">
                 <label>Supabase Anon Key:</label>
-                <input type="text" id="supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3NzMzMzMsImV4cCI6MjA3ODM0OTMzM30.VCZRjCDgVwNXu3e6Etmx6ppLBkIif_kbIE7IFRhU8OU" style="width: 400px;">
+                <input type="text" id="supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." style="width: 400px;">
             </div>
             <div class="form-group">
                 <label>表名:</label>
@@ -81,7 +79,6 @@
                     </div>
                 </div>
                 <div id="data-table-container"></div>
-                <div class="pagination" id="pagination"></div>
             </div>
 
             <!-- 数据导入标签页 -->
@@ -136,10 +133,9 @@
         // 全局变量
         let supabase = null;
         let currentTable = '取信异常设备清单';
-        let currentPage = 1;
-        const pageSize = 10;
         let allData = [];
         let tableSchema = [];
+        let primaryKey = 'id'; // 默认主键
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -201,7 +197,7 @@
             try {
                 showConfigStatus('正在测试连接...', 'success');
                 
-                // 测试查询
+                // 测试查询 - 使用更通用的方式
                 const { data, error } = await supabase
                     .from(currentTable)
                     .select('*')
@@ -209,17 +205,55 @@
 
                 if (error) {
                     if (error.message.includes('does not exist')) {
-                        showConfigStatus(`表 "${currentTable}" 不存在，请先创建表`, 'error');
+                        showConfigStatus(`表 "${currentTable}" 不存在`, 'error');
                     } else {
                         throw error;
                     }
                 } else {
                     showConfigStatus('连接成功! 可以开始使用系统', 'success');
+                    detectPrimaryKey();
                     loadTableData();
                 }
             } catch (error) {
                 showConfigStatus('连接失败: ' + error.message, 'error');
                 console.error('Connection error:', error);
+            }
+        }
+
+        // 自动检测主键字段
+        async function detectPrimaryKey() {
+            try {
+                // 尝试常见的ID字段名称
+                const commonPrimaryKeys = ['id', 'ID', 'Id', '序号', '编号'];
+                
+                // 获取第一条记录来检测字段
+                const { data, error } = await supabase
+                    .from(currentTable)
+                    .select('*')
+                    .limit(1);
+
+                if (data && data.length > 0) {
+                    const firstRecord = data[0];
+                    const fields = Object.keys(firstRecord);
+                    
+                    // 查找可能的主键字段
+                    for (const key of commonPrimaryKeys) {
+                        if (fields.includes(key)) {
+                            primaryKey = key;
+                            break;
+                        }
+                    }
+                    
+                    // 如果没有找到常见主键，使用第一个字段
+                    if (!primaryKey && fields.length > 0) {
+                        primaryKey = fields[0];
+                    }
+                    
+                    console.log('检测到主键字段:', primaryKey);
+                }
+            } catch (error) {
+                console.warn('主键检测失败:', error);
+                primaryKey = 'id'; // 回退到默认值
             }
         }
 
@@ -241,14 +275,13 @@
                 const { data, error } = await supabase
                     .from(currentTable)
                     .select('*')
-                    .range((currentPage - 1) * pageSize, currentPage * pageSize - 1)
-                    .order('id', { ascending: false });
+                    .order(primaryKey, { ascending: false })
+                    .limit(100); // 限制加载数量
 
                 if (error) throw error;
 
                 allData = data || [];
                 renderTable(allData);
-                renderPagination();
                 showStatus(`已加载 ${allData.length} 条记录`, 'success');
                 
             } catch (error) {
@@ -282,12 +315,13 @@
             `;
 
             data.forEach((row) => {
+                const rowId = row[primaryKey] || JSON.stringify(row);
                 html += `
                     <tr>
-                        ${columns.map(col => `<td>${formatCellValue(row[col])}</td>`).join('')}
+                        ${columns.map(col => `<td title="${row[col]}">${formatCellValue(row[col])}</td>`).join('')}
                         <td>
-                            <button class="edit" onclick="editRecord(${row.id})">编辑</button>
-                            <button class="delete" onclick="deleteRecord(${row.id})">删除</button>
+                            <button class="edit" onclick="editRecord('${escapeString(rowId)}')">编辑</button>
+                            <button class="delete" onclick="deleteRecord('${escapeString(rowId)}')">删除</button>
                         </td>
                     </tr>
                 `;
@@ -297,22 +331,19 @@
             container.innerHTML = html;
         }
 
+        function escapeString(str) {
+            return str.toString().replace(/'/g, "\\'").replace(/"/g, '\\"');
+        }
+
         function formatCellValue(value) {
             if (value === null || value === undefined) return '';
             if (typeof value === 'object') return JSON.stringify(value);
-            return value.toString();
+            const str = value.toString();
+            // 限制显示长度
+            return str.length > 50 ? str.substring(0, 50) + '...' : str;
         }
 
-        function renderPagination() {
-            // 简化分页
-            document.getElementById('pagination').innerHTML = `
-                <button ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">上一页</button>
-                <span>第 ${currentPage} 页</span>
-                <button onclick="changePage(${currentPage + 1})">下一页</button>
-            `;
-        }
-
-        // 其他函数保持不变（模态框、导入导出等）
+        // 其他函数
         function openTab(tabName) {
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
             document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
@@ -325,13 +356,7 @@
             }
         }
 
-        function changePage(page) {
-            currentPage = page;
-            loadTableData();
-        }
-
         function refreshData() {
-            currentPage = 1;
             loadTableData();
         }
 
@@ -341,13 +366,24 @@
             document.getElementById('edit-modal').style.display = 'block';
         }
 
-        function editRecord(id) {
-            const record = allData.find(row => row.id === id);
-            if (!record) return;
+        function editRecord(rowId) {
+            // 根据主键查找记录
+            const record = allData.find(row => {
+                const currentId = row[primaryKey] || JSON.stringify(row);
+                return currentId.toString() === rowId;
+            });
+            
+            if (!record) {
+                showStatus('未找到对应记录', 'error');
+                return;
+            }
 
             document.getElementById('modal-title').textContent = '编辑记录';
             document.getElementById('modal-form').innerHTML = generateForm(record);
             document.getElementById('edit-modal').style.display = 'block';
+            
+            // 保存当前编辑的记录ID
+            document.getElementById('modal-form').dataset.editingId = rowId;
         }
 
         function closeModal() {
@@ -357,7 +393,10 @@
         function generateForm(record = {}) {
             if (tableSchema.length === 0) return '<p>暂无字段信息</p>';
             
-            const columns = tableSchema.filter(col => col !== 'id' && col !== 'created_at' && col !== 'updated_at');
+            // 排除可能的主键字段和创建时间字段
+            const excludedFields = [primaryKey, 'id', 'ID', 'created_at', 'updated_at'];
+            const columns = tableSchema.filter(col => !excludedFields.includes(col));
+            
             return columns.map(col => `
                 <div class="form-group">
                     <label>${col}:</label>
@@ -367,7 +406,8 @@
         }
 
         async function saveRecord() {
-            const columns = tableSchema.filter(col => col !== 'id' && col !== 'created_at' && col !== 'updated_at');
+            const excludedFields = [primaryKey, 'id', 'ID', 'created_at', 'updated_at'];
+            const columns = tableSchema.filter(col => !excludedFields.includes(col));
             const formData = {};
             
             columns.forEach(col => {
@@ -376,14 +416,20 @@
 
             try {
                 let result;
-                if (document.getElementById('modal-title').textContent === '添加记录') {
+                const modalTitle = document.getElementById('modal-title').textContent;
+                const editingId = document.getElementById('modal-form').dataset.editingId;
+
+                if (modalTitle === '添加记录') {
+                    // 插入新记录
                     result = await supabase.from(currentTable).insert([formData]);
                 } else {
-                    const recordId = allData.find(row => 
-                        Object.keys(formData).some(key => row[key] === formData[key])
-                    )?.id;
-                    if (recordId) {
-                        result = await supabase.from(currentTable).update(formData).eq('id', recordId);
+                    // 更新现有记录
+                    if (editingId) {
+                        // 构建查询条件
+                        const query = supabase.from(currentTable).update(formData);
+                        
+                        // 使用检测到的主键进行更新
+                        result = await query.eq(primaryKey, editingId);
                     }
                 }
 
@@ -395,17 +441,18 @@
                 
             } catch (error) {
                 showStatus('保存失败: ' + error.message, 'error');
+                console.error('Save error:', error);
             }
         }
 
-        async function deleteRecord(id) {
+        async function deleteRecord(rowId) {
             if (!confirm('确定要删除这条记录吗？')) return;
 
             try {
                 const { error } = await supabase
                     .from(currentTable)
                     .delete()
-                    .eq('id', id);
+                    .eq(primaryKey, rowId);
 
                 if (error) throw error;
 
@@ -414,11 +461,11 @@
                 
             } catch (error) {
                 showStatus('删除失败: ' + error.message, 'error');
+                console.error('Delete error:', error);
             }
         }
 
         function showStatus(message, type) {
-            // 创建或更新状态消息
             let statusElement = document.querySelector('.status-message');
             if (!statusElement) {
                 statusElement = document.createElement('div');
@@ -436,39 +483,24 @@
             }, 3000);
         }
 
+        // 搜索功能
+        document.getElementById('search-input').addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            if (searchTerm) {
+                const filteredData = allData.filter(row => 
+                    Object.values(row).some(value => 
+                        value && value.toString().toLowerCase().includes(searchTerm)
+                    )
+                );
+                renderTable(filteredData);
+            } else {
+                renderTable(allData);
+            }
+        });
+
         // 表管理函数
         async function createSampleTable() {
-            if (!supabase) {
-                showStatus('请先初始化 Supabase', 'error');
-                return;
-            }
-
-            try {
-                showStatus('正在创建示例表...', 'success');
-                
-                // 这里需要在实际使用中通过 Supabase SQL 编辑器创建表
-                // 暂时使用插入数据的方式
-                const sampleData = {
-                    站址名称: '示例站址',
-                    设备名称: '示例设备',
-                    省: '广东省',
-                    市: '广州市',
-                    缺失信号量: 5,
-                    站址状态: '正常'
-                };
-
-                const { error } = await supabase
-                    .from(currentTable)
-                    .insert([sampleData]);
-
-                if (error) throw error;
-
-                showStatus('示例数据添加成功', 'success');
-                loadTableData();
-                
-            } catch (error) {
-                showStatus('创建失败: ' + error.message, 'error');
-            }
+            showStatus('请在 Supabase SQL 编辑器中创建表', 'success');
         }
 
         async function clearAllData() {
@@ -478,7 +510,7 @@
                 const { error } = await supabase
                     .from(currentTable)
                     .delete()
-                    .neq('id', 0); // 删除所有数据
+                    .neq(primaryKey, ''); // 删除所有数据
 
                 if (error) throw error;
 
