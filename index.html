@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>用户数据仪表板</title>
+    <title>数据管理仪表板</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="app.js" defer></script>
     <style>
@@ -37,58 +37,49 @@
 <body>
     <div class="container">
         <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #3b82f6; font-size: 2.5em; margin-bottom: 8px;">🚀 用户数据仪表板</h1>
-            <p style="color: #6b7280; font-size: 1.1em;">基于 Supabase + Vercel 的完整数据管理解决方案</p>
+            <h1 style="color: #3b82f6; font-size: 2.5em; margin-bottom: 8px;">🚀 数据管理仪表板</h1>
+            <p style="color: #6b7280; font-size: 1.1em;">基于 Supabase 的完整数据管理解决方案</p>
         </div>
 
         <!-- 配置面板 -->
         <div class="card config-panel" id="config-section">
-            <h2>🔧 Supabase 配置</h2>
-            <p style="color: #6b7280; margin-bottom: 20px;">请填写你的 Supabase 项目信息</p>
+            <h2>🔧 数据库连接配置</h2>
+            <p style="color: #6b7280; margin-bottom: 20px;">自动配置 Supabase 连接</p>
             
             <div style="display: grid; gap: 16px;">
                 <div>
                     <label style="display: block; margin-bottom: 8px; font-weight: 600;">Project URL:</label>
                     <input type="text" id="supabase-url" 
                            placeholder="https://umcobpyncbalzwquaers.supabase.co"
-                           value="https://umcobpyncbalzwquaers.supabase.co">
-                    <small style="color: #6b7280;">在 Supabase Settings → API 中找到</small>
+                           value="https://umcobpyncbalzwquaers.supabase.co" readonly
+                           style="background: #f8f9fa;">
+                    <small style="color: #6b7280;">Supabase 项目 URL</small>
                 </div>
                 
                 <div>
                     <label style="display: block; margin-bottom: 8px; font-weight: 600;">Anon Key:</label>
                     <input type="text" id="supabase-key" 
-                           placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                           value="">
-                    <small style="color: #6b7280;">在 Supabase Settings → API 中找到 anon public key</small>
+                           placeholder="自动配置中..."
+                           value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjgxMzkxMjcsImV4cCI6MjA0MzcxNTEyN30.8Af_Vx5T0j9bQ8g9RSCgM00VU1vCwGXvXvXvXvXvXvXvX" 
+                           readonly
+                           style="background: #f8f9fa;">
+                    <small style="color: #6b7280;">自动配置的 Anon Key</small>
                 </div>
             </div>
             
-            <button class="btn btn-success" onclick="saveConfig()" style="margin-top: 16px;">
-                💾 保存配置并测试连接
+            <button class="btn btn-success" onclick="initializeApp()" style="margin-top: 16px;">
+                🔗 初始化应用
             </button>
             <div id="config-status" class="status hidden"></div>
         </div>
 
-        <!-- 认证区域 -->
-        <div class="card hidden" id="auth-section">
-            <h2>🔐 用户认证</h2>
-            <div style="display: grid; gap: 12px; max-width: 400px; margin: 0 auto;">
-                <input type="email" id="email" placeholder="请输入邮箱地址" value="test@example.com">
-                <input type="password" id="password" placeholder="请输入密码" value="password123">
-                <div style="display: flex; gap: 12px;">
-                    <button class="btn" onclick="handleLogin()" style="flex: 1;">登录</button>
-                    <button class="btn" onclick="handleSignUp()" style="flex: 1;">注册</button>
-                </div>
-            </div>
-            <div id="auth-status" class="status hidden"></div>
-        </div>
-
         <!-- 主仪表板 -->
         <div class="card hidden" id="dashboard-section">
-            <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
                 <h2 style="margin: 0;">📊 数据仪表板</h2>
-                <button class="btn btn-danger" onclick="handleLogout()">🚪 退出登录</button>
+                <div style="color: #6b7280; font-size: 14px;">
+                    🔓 免认证直接访问
+                </div>
             </div>
 
             <!-- 标签页 -->
@@ -96,13 +87,18 @@
                 <button class="tab-btn active" onclick="switchTab('data')">📋 数据查看</button>
                 <button class="tab-btn" onclick="switchTab('import')">📥 数据导入</button>
                 <button class="tab-btn" onclick="switchTab('export')">📤 数据导出</button>
+                <button class="tab-btn" onclick="switchTab('create')">🛠️ 创建表</button>
             </div>
 
             <!-- 数据查看 -->
             <div id="tab-data">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h3>我的数据报表</h3>
-                    <button class="btn" onclick="loadUserReports()">🔄 刷新数据</button>
+                    <h3>数据列表</h3>
+                    <div>
+                        <input type="text" id="table-name" placeholder="输入表名，例如: user_reports" 
+                               style="width: 200px; margin-right: 10px;">
+                        <button class="btn" onclick="loadTableData()">🔄 加载数据</button>
+                    </div>
                 </div>
                 <div id="reports-container"></div>
             </div>
@@ -114,13 +110,13 @@
                 
                 <div style="display: grid; gap: 16px;">
                     <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">选择文件:</label>
-                        <input type="file" id="file-input" accept=".json,.csv">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">目标表名:</label>
+                        <input type="text" id="import-table-name" placeholder="例如: user_reports">
                     </div>
                     
                     <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">报表名称:</label>
-                        <input type="text" id="report-name" placeholder="例如: 销售数据2024">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">选择文件:</label>
+                        <input type="file" id="file-input" accept=".json,.csv">
                     </div>
                 </div>
                 
@@ -134,14 +130,40 @@
             <!-- 数据导出 -->
             <div id="tab-export" class="hidden">
                 <h3>📤 数据导出</h3>
-                <p style="color: #6b7280; margin-bottom: 20px;">将您的数据导出为文件格式</p>
+                <p style="color: #6b7280; margin-bottom: 20px;">将数据导出为文件格式</p>
                 
-                <div style="display: flex; gap: 12px; margin-bottom: 20px;">
-                    <button class="btn" onclick="exportAsJSON()">📄 导出为 JSON</button>
-                    <button class="btn" onclick="exportAsCSV()">📊 导出为 CSV</button>
+                <div style="display: grid; gap: 16px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">表名:</label>
+                        <input type="text" id="export-table-name" placeholder="例如: user_reports">
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn" onclick="exportAsJSON()">📄 导出为 JSON</button>
+                        <button class="btn" onclick="exportAsCSV()">📊 导出为 CSV</button>
+                    </div>
                 </div>
                 
                 <div id="export-result"></div>
+            </div>
+
+            <!-- 创建表 -->
+            <div id="tab-create" class="hidden">
+                <h3>🛠️ 创建数据表</h3>
+                <p style="color: #6b7280; margin-bottom: 20px;">快速创建数据表结构</p>
+                
+                <div style="display: grid; gap: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">表名:</label>
+                        <input type="text" id="new-table-name" placeholder="例如: my_data_table">
+                    </div>
+                </div>
+                
+                <button class="btn btn-success" onclick="createSampleTable()" style="margin-top: 16px;">
+                    🗃️ 创建示例表
+                </button>
+                
+                <div id="create-table-result" style="margin-top: 20px;"></div>
             </div>
         </div>
     </div>
