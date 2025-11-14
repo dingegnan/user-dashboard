@@ -3,6 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 添加 CSP 策略以允许 Supabase 连接 -->
+    <meta http-equiv="Content-Security-Policy" 
+          content="default-src 'self' https://umcobpyncbalzwquaers.supabase.co https://*.supabase.co https://*.supabase.in https://unpkg.com;
+                   script-src 'self' 'unsafe-inline' https://unpkg.com https://umcobpyncbalzwquaers.supabase.co;
+                   connect-src 'self' https://umcobpyncbalzwquaers.supabase.co https://*.supabase.co https://*.supabase.in;
+                   style-src 'self' 'unsafe-inline';
+                   img-src 'self' data: https:;">
     <title>数据管理仪表板</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="app.js" defer></script>
