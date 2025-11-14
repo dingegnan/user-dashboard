@@ -3,49 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- 添加 CSP 策略以允许 Supabase 连接 -->
-    <meta http-equiv="Content-Security-Policy" 
-          content="default-src 'self' https://umcobpyncbalzwquaers.supabase.co https://*.supabase.co https://*.supabase.in https://unpkg.com;
-                   script-src 'self' 'unsafe-inline' https://unpkg.com https://umcobpyncbalzwquaers.supabase.co;
-                   connect-src 'self' https://umcobpyncbalzwquaers.supabase.co https://*.supabase.co https://*.supabase.in;
-                   style-src 'self' 'unsafe-inline';
-                   img-src 'self' data: https:;">
-    <title>数据管理仪表板</title>
+    <title>Supabase 数据管理系统</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="app.js" defer></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; }
+        .container { max-width: 1200px; margin: 0 auto; }
         .card { background: white; padding: 25px; margin: 20px 0; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .btn { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin: 8px; font-size: 14px; transition: all 0.3s; }
+        .btn { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 5px; font-size: 14px; transition: all 0.3s; }
         .btn:hover { background: #2563eb; transform: translateY(-1px); }
         .btn:disabled { background: #9ca3af; cursor: not-allowed; transform: none; }
         .btn-danger { background: #ef4444; }
         .btn-danger:hover { background: #dc2626; }
         .btn-success { background: #10b981; }
         .btn-success:hover { background: #059669; }
-        input, select { padding: 12px; margin: 8px 0; border: 1px solid #d1d5db; border-radius: 8px; width: 100%; font-size: 14px; transition: border 0.3s; }
-        input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        .btn-warning { background: #f59e0b; }
+        .btn-warning:hover { background: #d97706; }
+        input, select, textarea { padding: 10px; margin: 5px 0; border: 1px solid #d1d5db; border-radius: 6px; width: 100%; font-size: 14px; transition: border 0.3s; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
         .hidden { display: none; }
-        .tab { display: flex; border-bottom: 2px solid #e5e7eb; margin-bottom: 24px; background: #f8fafc; border-radius: 8px; padding: 4px; }
-        .tab-btn { flex: 1; padding: 12px; background: none; border: none; cursor: pointer; border-radius: 6px; transition: all 0.3s; }
+        .tab { display: flex; border-bottom: 2px solid #e5e7eb; margin-bottom: 24px; background: #f8fafc; border-radius: 8px; padding: 4px; flex-wrap: wrap; }
+        .tab-btn { flex: 1; min-width: 120px; padding: 12px; background: none; border: none; cursor: pointer; border-radius: 6px; transition: all 0.3s; margin: 2px; }
         .tab-btn.active { background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1); color: #3b82f6; font-weight: 600; }
         .status { padding: 12px; border-radius: 8px; margin: 16px 0; font-size: 14px; }
         .status.success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
         .status.error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
         .status.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
-        .report-item { border: 1px solid #e5e7eb; padding: 20px; margin: 16px 0; border-radius: 12px; background: #fafafa; transition: all 0.3s; }
-        .report-item:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
-        pre { background: #1f2937; color: #f3f4f6; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12px; margin: 12px 0; }
-        .config-panel { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 20px; margin: 20px 0; }
+        .status.warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+        .table-container { overflow-x: auto; margin: 16px 0; border-radius: 8px; border: 1px solid #e5e7eb; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f8fafc; font-weight: 600; color: #374151; position: sticky; top: 0; }
+        tr:hover { background: #f9fafb; }
+        tr.editing { background: #f0f9ff; }
+        .action-buttons { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+        .config-panel { background: #f0f9ff; border: 1px solid #bae6fd; }
+        .table-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 15px 0; }
+        .table-item { padding: 15px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; transition: all 0.3s; }
+        .table-item:hover { background: #eff6ff; border-color: #3b82f6; }
+        .table-item.active { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+        .modal-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 12px; min-width: 400px; max-width: 90%; max-height: 80%; overflow-y: auto; }
+        .form-group { margin: 15px 0; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #374151; }
+        .edit-cell { background: #f0f9ff; border: 1px solid #3b82f6; border-radius: 4px; padding: 8px; }
+        .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 20px 0; }
+        .page-btn { padding: 8px 16px; border: 1px solid #d1d5db; background: white; cursor: pointer; border-radius: 4px; }
+        .page-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+        .page-btn:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
     </style>
 </head>
 <body>
     <div class="container">
         <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #3b82f6; font-size: 2.5em; margin-bottom: 8px;">🚀 数据管理仪表板</h1>
-            <p style="color: #6b7280; font-size: 1.1em;">基于 Supabase 的完整数据管理解决方案</p>
+            <h1 style="color: #3b82f6; font-size: 2.5em; margin-bottom: 8px;">🚀 Supabase 数据管理系统</h1>
+            <p style="color: #6b7280; font-size: 1.1em;">完整的数据库表管理和数据操作解决方案</p>
         </div>
 
         <!-- 配置面板 -->
@@ -57,73 +70,121 @@
                 <div>
                     <label style="display: block; margin-bottom: 8px; font-weight: 600;">Project URL:</label>
                     <input type="text" id="supabase-url" 
-                           placeholder="https://umcobpyncbalzwquaers.supabase.co"
                            value="https://umcobpyncbalzwquaers.supabase.co" readonly
                            style="background: #f8f9fa;">
-                    <small style="color: #6b7280;">Supabase 项目 URL</small>
                 </div>
                 
                 <div>
                     <label style="display: block; margin-bottom: 8px; font-weight: 600;">Anon Key:</label>
                     <input type="text" id="supabase-key" 
-                           placeholder="自动配置中..."
-                           value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjgxMzkxMjcsImV4cCI6MjA0MzcxNTEyN30.8Af_Vx5T0j9bQ8g9RSCgM00VU1vCwGXvXvXvXvXvXvXvX" 
+                           value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3NzMzMzMsImV4cCI6MjA3ODM0OTMzM30.VCZRjCDgVwNXu3e6Etmx6ppLBkIif_kbIE7IFRhU8OU" 
                            readonly
                            style="background: #f8f9fa;">
-                    <small style="color: #6b7280;">自动配置的 Anon Key</small>
                 </div>
             </div>
             
             <button class="btn btn-success" onclick="initializeApp()" style="margin-top: 16px;">
-                🔗 初始化应用
+                🔗 连接数据库
             </button>
             <div id="config-status" class="status hidden"></div>
         </div>
 
         <!-- 主仪表板 -->
         <div class="card hidden" id="dashboard-section">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                <h2 style="margin: 0;">📊 数据仪表板</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 10px;">
+                <h2 style="margin: 0;">📊 数据管理面板</h2>
                 <div style="color: #6b7280; font-size: 14px;">
-                    🔓 免认证直接访问
+                    🔓 免认证直接访问 | 当前表: <span id="current-table-name">未选择</span>
                 </div>
             </div>
 
             <!-- 标签页 -->
             <div class="tab">
-                <button class="tab-btn active" onclick="switchTab('data')">📋 数据查看</button>
+                <button class="tab-btn active" onclick="switchTab('tables')">📋 表管理</button>
+                <button class="tab-btn" onclick="switchTab('data')">📊 数据编辑</button>
                 <button class="tab-btn" onclick="switchTab('import')">📥 数据导入</button>
                 <button class="tab-btn" onclick="switchTab('export')">📤 数据导出</button>
-                <button class="tab-btn" onclick="switchTab('create')">🛠️ 创建表</button>
+                <button class="tab-btn" onclick="switchTab('sql')">🔧 SQL 工具</button>
             </div>
 
-            <!-- 数据查看 -->
-            <div id="tab-data">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h3>数据列表</h3>
-                    <div>
-                        <input type="text" id="table-name" placeholder="输入表名，例如: user_reports" 
-                               style="width: 200px; margin-right: 10px;">
-                        <button class="btn" onclick="loadTableData()">🔄 加载数据</button>
-                    </div>
+            <!-- 表管理 -->
+            <div id="tab-tables">
+                <h3>🗃️ 数据库表列表</h3>
+                <p style="color: #6b7280; margin-bottom: 20px;">点击表名选择要操作的数据表</p>
+                
+                <div class="action-buttons">
+                    <button class="btn" onclick="refreshTableList()">🔄 刷新表列表</button>
+                    <button class="btn btn-success" onclick="showCreateTableModal()">➕ 创建新表</button>
                 </div>
-                <div id="reports-container"></div>
+                
+                <div id="tables-container" class="table-list">
+                    <!-- 表列表将在这里动态生成 -->
+                </div>
+                
+                <div id="table-stats" class="status info hidden">
+                    <!-- 表统计信息 -->
+                </div>
+            </div>
+
+            <!-- 数据编辑 -->
+            <div id="tab-data" class="hidden">
+                <h3>📝 数据编辑</h3>
+                <p style="color: #6b7280; margin-bottom: 20px;">编辑选中的数据表内容</p>
+                
+                <div class="action-buttons">
+                    <button class="btn" onclick="loadTableData()">🔄 刷新数据</button>
+                    <button class="btn btn-success" onclick="addNewRow()">➕ 添加新行</button>
+                    <button class="btn btn-warning" onclick="enableEditing()">✏️ 启用编辑</button>
+                    <button class="btn btn-danger" onclick="deleteSelectedRows()">🗑️ 删除选中</button>
+                    <button class="btn" onclick="saveAllChanges()">💾 保存所有更改</button>
+                </div>
+                
+                <div id="data-controls" style="margin: 15px 0;">
+                    <label>每页显示行数: </label>
+                    <select id="page-size" onchange="loadTableData()">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                    
+                    <label style="margin-left: 20px;">搜索: </label>
+                    <input type="text" id="search-input" placeholder="输入搜索关键词..." style="width: 200px;" onkeyup="loadTableData()">
+                </div>
+                
+                <div id="data-container" class="table-container">
+                    <!-- 数据表格将在这里动态生成 -->
+                </div>
+                
+                <div class="pagination" id="pagination-controls">
+                    <!-- 分页控件将在这里动态生成 -->
+                </div>
             </div>
 
             <!-- 数据导入 -->
             <div id="tab-import" class="hidden">
                 <h3>📥 数据导入</h3>
-                <p style="color: #6b7280; margin-bottom: 20px;">支持 JSON 和 CSV 格式文件导入</p>
+                <p style="color: #6b7280; margin-bottom: 20px;">导入数据将清空目标表的现有数据</p>
                 
                 <div style="display: grid; gap: 16px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">目标表名:</label>
-                        <input type="text" id="import-table-name" placeholder="例如: user_reports">
+                    <div class="form-group">
+                        <label>目标表:</label>
+                        <select id="import-table-name">
+                            <option value="">请先选择表</option>
+                        </select>
                     </div>
                     
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">选择文件:</label>
+                    <div class="form-group">
+                        <label>选择文件 (JSON/CSV):</label>
                         <input type="file" id="file-input" accept=".json,.csv">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>导入选项:</label>
+                        <div>
+                            <input type="checkbox" id="clear-table" checked>
+                            <label for="clear-table">清空目标表现有数据</label>
+                        </div>
                     </div>
                 </div>
                 
@@ -132,6 +193,7 @@
                 </button>
                 
                 <div id="import-preview" style="margin-top: 20px;"></div>
+                <div id="import-result"></div>
             </div>
 
             <!-- 数据导出 -->
@@ -139,38 +201,80 @@
                 <h3>📤 数据导出</h3>
                 <p style="color: #6b7280; margin-bottom: 20px;">将数据导出为文件格式</p>
                 
-                <div style="display: grid; gap: 16px; margin-bottom: 20px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">表名:</label>
-                        <input type="text" id="export-table-name" placeholder="例如: user_reports">
+                <div style="display: grid; gap: 16px;">
+                    <div class="form-group">
+                        <label>选择表:</label>
+                        <select id="export-table-name">
+                            <option value="">请先选择表</option>
+                        </select>
                     </div>
                     
-                    <div style="display: flex; gap: 12px;">
-                        <button class="btn" onclick="exportAsJSON()">📄 导出为 JSON</button>
-                        <button class="btn" onclick="exportAsCSV()">📊 导出为 CSV</button>
+                    <div class="form-group">
+                        <label>导出格式:</label>
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn" onclick="exportAsJSON()">📄 JSON</button>
+                            <button class="btn" onclick="exportAsCSV()">📊 CSV</button>
+                            <button class="btn" onclick="exportAsExcel()">📈 Excel</button>
+                        </div>
                     </div>
                 </div>
                 
-                <div id="export-result"></div>
+                <div id="export-result" style="margin-top: 20px;"></div>
             </div>
 
-            <!-- 创建表 -->
-            <div id="tab-create" class="hidden">
-                <h3>🛠️ 创建数据表</h3>
-                <p style="color: #6b7280; margin-bottom: 20px;">快速创建数据表结构</p>
+            <!-- SQL 工具 -->
+            <div id="tab-sql" class="hidden">
+                <h3>🔧 SQL 查询工具</h3>
+                <p style="color: #6b7280; margin-bottom: 20px;">执行自定义 SQL 查询</p>
                 
-                <div style="display: grid; gap: 16px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">表名:</label>
-                        <input type="text" id="new-table-name" placeholder="例如: my_data_table">
-                    </div>
+                <div class="form-group">
+                    <label>SQL 查询:</label>
+                    <textarea id="sql-query" rows="6" placeholder="输入 SQL 查询语句，例如: SELECT * FROM 表名 LIMIT 10"></textarea>
                 </div>
                 
-                <button class="btn btn-success" onclick="createSampleTable()" style="margin-top: 16px;">
-                    🗃️ 创建示例表
-                </button>
+                <div class="action-buttons">
+                    <button class="btn btn-success" onclick="executeSQL()">🚀 执行查询</button>
+                    <button class="btn" onclick="clearSQL()">🗑️ 清空</button>
+                </div>
                 
-                <div id="create-table-result" style="margin-top: 20px;"></div>
+                <div id="sql-result" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建表模态框 -->
+    <div id="create-table-modal" class="modal">
+        <div class="modal-content">
+            <h3>创建新表</h3>
+            <div class="form-group">
+                <label>表名:</label>
+                <input type="text" id="new-table-name" placeholder="输入表名">
+            </div>
+            <div class="form-group">
+                <label>表结构 (JSON):</label>
+                <textarea id="table-schema" rows="8" placeholder='例如: [
+  {"name": "id", "type": "serial", "primary": true},
+  {"name": "name", "type": "varchar(255)"},
+  {"name": "created_at", "type": "timestamptz", "default": "now()"}
+]'></textarea>
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-success" onclick="createTable()">创建表</button>
+                <button class="btn" onclick="hideModal('create-table-modal')">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑行模态框 -->
+    <div id="edit-row-modal" class="modal">
+        <div class="modal-content">
+            <h3>编辑数据行</h3>
+            <div id="edit-form-container">
+                <!-- 编辑表单将在这里动态生成 -->
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-success" onclick="saveRowEdit()">保存</button>
+                <button class="btn" onclick="hideModal('edit-row-modal')">取消</button>
             </div>
         </div>
     </div>
