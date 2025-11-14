@@ -3,7 +3,7 @@
 // Supabase 配置 - 直接内置
 const SUPABASE_CONFIG = {
     url: 'https://umcobpyncbalzwquaers.supabase.co',
-    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjgxMzkxMjcsImV4cCI6MjA0MzcxNTEyN30.8Af_Vx5T0j9bQ8g9RSCgM00VU1vCwGXvXvXvXvXvXvXvX'
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3NzMzMzMsImV4cCI6MjA3ODM0OTMzM30.VCZRjCDgVwNXu3e6Etmx6ppLBkIif_kbIE7IFRhU8OU'
 };
 
 // Supabase 客户端实例
