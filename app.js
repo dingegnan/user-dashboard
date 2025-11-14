@@ -1,291 +1,443 @@
-// app.js - 数据管理仪表板 (免认证版本)
+// app.js - Supabase 数据管理系统
+console.log('🚀 Supabase 数据管理系统启动...');
 
-// Supabase 配置 - 直接内置
+// Supabase 配置
 const SUPABASE_CONFIG = {
     url: 'https://umcobpyncbalzwquaers.supabase.co',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3NzMzMzMsImV4cCI6MjA3ODM0OTMzM30.VCZRjCDgVwNXu3e6Etmx6ppLBkIif_kbIE7IFRhU8OU'
 };
 
-// Supabase 客户端实例
+// 全局变量
 let supabase = null;
+let currentTable = '';
+let tableList = [];
+let currentData = [];
+let currentPage = 1;
+let totalPages = 1;
+let pageSize = 25;
+let isEditingEnabled = false;
+let editingRows = new Set();
 
-// 初始化函数 - 页面加载时自动初始化
+// 初始化应用
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 数据管理仪表板初始化...');
-    
-    // 显示配置信息
-    document.getElementById('supabase-url').value = SUPABASE_CONFIG.url;
-    document.getElementById('supabase-key').value = SUPABASE_CONFIG.key;
-    
-    // 自动初始化
+    console.log('🔧 初始化应用...');
     initializeApp();
 });
 
-// 初始化应用
+// 初始化 Supabase 连接
 function initializeApp() {
-    console.log('🔧 开始初始化应用...');
-    
     try {
-        // 检查 Supabase 库是否加载
         if (typeof window.supabase === 'undefined') {
-            showStatus('config-status', '❌ Supabase 库未加载，请检查网络连接', 'error');
-            console.error('Supabase library not loaded');
+            showStatus('config-status', '❌ Supabase 库未加载', 'error');
             return;
         }
 
-        console.log('📡 正在初始化 Supabase 客户端...');
-        
-        // 直接使用内置配置初始化 Supabase
         supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.key, {
-            auth: {
-                persistSession: false,
-                autoRefreshToken: false
-            },
-            db: {
-                schema: 'public'
-            }
+            auth: { persistSession: false },
+            db: { schema: 'public' }
         });
 
-        console.log('✅ Supabase 客户端初始化成功');
-        showStatus('config-status', '✅ Supabase 客户端初始化成功！正在测试连接...', 'info');
-        
-        // 测试连接
+        showStatus('config-status', '✅ 正在连接数据库...', 'info');
         testConnection();
     } catch (error) {
-        console.error('❌ 初始化失败:', error);
         showStatus('config-status', '❌ 初始化失败: ' + error.message, 'error');
     }
 }
 
 // 测试连接
 async function testConnection() {
-    console.log('🔗 测试数据库连接...');
-    
     try {
-        // 使用更简单的方式测试连接 - 查询系统表或尝试简单查询
-        const { data, error } = await supabase
-            .from('_supabase_settings')
-            .select('*')
-            .limit(1)
-            .single();
-
+        // 尝试获取表列表来测试连接
+        const { data, error } = await supabase.from('_supabase_settings').select('*').limit(1);
+        
         if (error) {
-            // 如果系统表查询失败，尝试查询用户表
-            console.log('⚠️ 系统表查询失败，尝试用户表查询:', error.message);
-            await testUserTables();
+            await loadTableList(); // 直接尝试加载表列表
         } else {
-            console.log('✅ 数据库连接成功！');
             showStatus('config-status', '✅ 数据库连接成功！', 'success');
             showDashboard();
+            loadTableList();
         }
     } catch (error) {
-        console.error('❌ 连接测试异常:', error);
-        showStatus('config-status', '❌ 连接测试异常: ' + error.message, 'error');
-    }
-}
-
-// 测试用户表连接
-async function testUserTables() {
-    try {
-        // 尝试查询可能存在的表
-        const tablesToTry = ['user_reports', 'profiles', 'users', 'data'];
-        
-        for (const tableName of tablesToTry) {
-            console.log(`🔍 尝试查询表: ${tableName}`);
-            const { data, error } = await supabase
-                .from(tableName)
-                .select('*')
-                .limit(1);
-
-            if (!error) {
-                console.log(`✅ 表 ${tableName} 查询成功`);
-                showStatus('config-status', `✅ 数据库连接成功！发现表: ${tableName}`, 'success');
-                showDashboard();
-                return;
-            }
-        }
-        
-        // 如果所有表都不存在，但连接是成功的
-        console.log('✅ 数据库连接成功，但未发现常用表');
-        showStatus('config-status', '✅ 数据库连接成功！您可以在"创建表"标签页创建新表', 'success');
-        showDashboard();
-        
-    } catch (error) {
-        console.error('❌ 用户表测试失败:', error);
         showStatus('config-status', '❌ 连接失败: ' + error.message, 'error');
     }
 }
 
-// 显示状态消息
-function showStatus(elementId, message, type = 'info') {
-    const element = document.getElementById(elementId);
-    if (!element) {
-        console.error(`Element with id ${elementId} not found`);
+// 加载表列表
+async function loadTableList() {
+    try {
+        // 使用信息模式查询获取所有表
+        const { data, error } = await supabase
+            .from('information_schema.tables')
+            .select('table_name')
+            .eq('table_schema', 'public')
+            .eq('table_type', 'BASE TABLE');
+
+        if (error) throw error;
+
+        tableList = data.map(item => item.table_name).filter(name => !name.startsWith('_'));
+        
+        renderTableList();
+        populateTableSelectors();
+        showStatus('config-status', '✅ 数据库连接成功！发现 ' + tableList.length + ' 个表', 'success');
+        showDashboard();
+    } catch (error) {
+        console.error('加载表列表失败:', error);
+        showStatus('config-status', '⚠️ 连接成功，但无法获取表列表: ' + error.message, 'warning');
+        showDashboard();
+    }
+}
+
+// 渲染表列表
+function renderTableList() {
+    const container = document.getElementById('tables-container');
+    if (!container) return;
+
+    if (tableList.length === 0) {
+        container.innerHTML = '<div class="status info">📝 数据库中没有找到表</div>';
         return;
     }
+
+    container.innerHTML = tableList.map(table => `
+        <div class="table-item ${table === currentTable ? 'active' : ''}" 
+             onclick="selectTable('${table}')">
+            <div style="font-weight: 600; margin-bottom: 5px;">${table}</div>
+            <div style="font-size: 12px; color: #6b7280;">点击选择</div>
+        </div>
+    `).join('');
+}
+
+// 选择表
+async function selectTable(tableName) {
+    currentTable = tableName;
+    document.getElementById('current-table-name').textContent = tableName;
     
-    element.textContent = message;
-    element.className = `status ${type}`;
-    element.classList.remove('hidden');
+    // 更新活跃状态
+    document.querySelectorAll('.table-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    event.target.closest('.table-item').classList.add('active');
     
-    console.log(`📢 Status [${type}]: ${message}`);
+    // 加载表统计信息
+    await loadTableStats(tableName);
     
-    // 自动隐藏信息消息
-    if (type === 'info') {
-        setTimeout(() => {
-            element.classList.add('hidden');
-        }, 5000);
+    // 如果当前在数据标签页，自动加载数据
+    if (document.getElementById('tab-data').classList.contains('hidden') === false) {
+        loadTableData();
     }
 }
 
-// 显示主仪表板
-function showDashboard() {
-    console.log('🎯 显示主仪表板');
-    document.getElementById('config-section').classList.add('hidden');
-    document.getElementById('dashboard-section').classList.remove('hidden');
+// 加载表统计信息
+async function loadTableStats(tableName) {
+    try {
+        const { count, error } = await supabase
+            .from(tableName)
+            .select('*', { count: 'exact', head: true });
+
+        if (!error) {
+            document.getElementById('table-stats').innerHTML = `
+                <strong>表信息:</strong> ${tableName} | 
+                <strong>记录数:</strong> ${count} | 
+                <strong>最后更新:</strong> ${new Date().toLocaleString()}
+            `;
+            document.getElementById('table-stats').classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('加载表统计失败:', error);
+    }
 }
 
-// 切换标签页
-function switchTab(tabName) {
-    console.log(`📑 切换到标签: ${tabName}`);
+// 填充表选择器
+function populateTableSelectors() {
+    const importSelector = document.getElementById('import-table-name');
+    const exportSelector = document.getElementById('export-table-name');
     
-    // 隐藏所有标签内容
-    document.querySelectorAll('[id^="tab-"]').forEach(tab => {
-        tab.classList.add('hidden');
-    });
+    const options = tableList.map(table => `<option value="${table}">${table}</option>`).join('');
     
-    // 移除所有标签按钮的激活状态
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    
-    // 显示选中的标签内容
-    const targetTab = document.getElementById(`tab-${tabName}`);
-    if (targetTab) {
-        targetTab.classList.remove('hidden');
+    if (importSelector) {
+        importSelector.innerHTML = '<option value="">选择表...</option>' + options;
     }
-    
-    // 激活对应的标签按钮
-    if (event && event.target) {
-        event.target.classList.add('active');
+    if (exportSelector) {
+        exportSelector.innerHTML = '<option value="">选择表...</option>' + options;
     }
 }
 
 // 加载表数据
 async function loadTableData() {
-    const tableName = document.getElementById('table-name').value.trim();
-    const container = document.getElementById('reports-container');
-    
-    if (!tableName) {
-        container.innerHTML = '<div class="status error">❌ 请输入表名</div>';
+    if (!currentTable) {
+        showStatus('data-container', '❌ 请先选择表', 'error');
         return;
     }
-    
-    console.log(`📊 加载表数据: ${tableName}`);
-    container.innerHTML = '<div class="status info">📡 加载数据中...</div>';
+
+    const searchTerm = document.getElementById('search-input').value;
+    pageSize = parseInt(document.getElementById('page-size').value) || 25;
 
     try {
-        const { data, error } = await supabase
-            .from(tableName)
-            .select('*')
-            .limit(100); // 限制返回数量
+        let query = supabase
+            .from(currentTable)
+            .select('*', { count: 'exact' });
 
-        if (error) {
-            console.error(`❌ 加载表 ${tableName} 失败:`, error);
-            if (error.message.includes('does not exist')) {
-                container.innerHTML = `
-                    <div class="status error">
-                        ❌ 表 "${tableName}" 不存在<br>
-                        <small>请在"创建表"标签页创建表，或检查表名是否正确</small>
-                    </div>`;
-            } else if (error.message.includes('JWT')) {
-                container.innerHTML = `
-                    <div class="status error">
-                        ❌ 权限错误: API Key 可能无效<br>
-                        <small>请检查 Supabase 配置</small>
-                    </div>`;
-            } else {
-                container.innerHTML = `<div class="status error">❌ 加载失败: ${error.message}</div>`;
-            }
-            return;
+        // 添加搜索条件（简单实现，搜索所有文本字段）
+        if (searchTerm) {
+            // 这里可以优化为具体字段搜索
+            query = query.or(`*.ilike.%${searchTerm}%`);
         }
-        
-        console.log(`✅ 成功加载 ${data.length} 条记录`);
-        
-        if (!data || data.length === 0) {
-            container.innerHTML = `
-                <div class="status info">
-                    📝 表 "${tableName}" 存在但是空的<br>
-                    <small>请在"数据导入"标签页添加数据</small>
-                </div>`;
-            return;
-        }
-        
-        // 显示数据
-        renderTableData(tableName, data);
+
+        // 分页
+        const from = (currentPage - 1) * pageSize;
+        const to = from + pageSize - 1;
+        query = query.range(from, to);
+
+        const { data, error, count } = await query;
+
+        if (error) throw error;
+
+        currentData = data || [];
+        totalPages = Math.ceil((count || 0) / pageSize);
+
+        renderTableData();
+        renderPagination();
         
     } catch (error) {
-        console.error('❌ 加载数据异常:', error);
-        container.innerHTML = `<div class="status error">❌ 加载异常: ${error.message}</div>`;
+        console.error('加载数据失败:', error);
+        document.getElementById('data-container').innerHTML = 
+            `<div class="status error">❌ 加载失败: ${error.message}</div>`;
     }
 }
 
 // 渲染表格数据
-function renderTableData(tableName, data) {
-    const container = document.getElementById('reports-container');
-    const columns = Object.keys(data[0]);
+function renderTableData() {
+    const container = document.getElementById('data-container');
+    if (!container || currentData.length === 0) {
+        container.innerHTML = '<div class="status info">📝 没有数据</div>';
+        return;
+    }
+
+    const columns = Object.keys(currentData[0]);
     
     let html = `
-        <div class="status success">
-            ✅ 表 "${tableName}" 数据加载成功 (共 ${data.length} 条记录)
-        </div>
-        <div style="overflow-x: auto; margin-top: 16px;">
-            <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
-                <thead style="background: #f8f9fa;">
-                    <tr>
-                        ${columns.map(col => `<th style="padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb;">${col}</th>`).join('')}
-                    </tr>
-                </thead>
-                <tbody>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50px;">
+                        <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
+                    </th>
+                    ${columns.map(col => `<th>${col}</th>`).join('')}
+                    <th style="width: 100px;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
     `;
 
-    data.forEach((row, index) => {
-        html += `<tr ${index % 2 === 0 ? 'style="background: #fafafa;"' : ''}>`;
+    currentData.forEach((row, index) => {
+        const rowId = row.id || index;
+        html += `<tr data-row-id="${rowId}" ${editingRows.has(rowId) ? 'class="editing"' : ''}>`;
+        html += `<td><input type="checkbox" class="row-selector" value="${rowId}"></td>`;
+        
         columns.forEach(col => {
-            const value = formatTableValue(row[col]);
-            html += `<td style="padding: 12px; border-bottom: 1px solid #e5e7eb; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${value}</td>`;
+            const value = formatCellValue(row[col]);
+            if (editingRows.has(rowId)) {
+                html += `<td><input type="text" class="edit-cell" data-field="${col}" value="${value}" onchange="markRowAsChanged(${rowId})"></td>`;
+            } else {
+                html += `<td title="${value}">${value}</td>`;
+            }
         });
+        
+        html += `<td>
+            <button class="btn" onclick="editRow(${rowId})" style="padding: 4px 8px; font-size: 12px;">✏️</button>
+            <button class="btn btn-danger" onclick="deleteRow(${rowId})" style="padding: 4px 8px; font-size: 12px;">🗑️</button>
+        </td>`;
         html += '</tr>';
     });
 
-    html += '</tbody></table></div>';
+    html += '</tbody></table>';
     container.innerHTML = html;
 }
 
-// 格式化表格值
-function formatTableValue(value) {
+// 格式化单元格值
+function formatCellValue(value) {
     if (value === null || value === undefined) return '<em style="color: #999;">null</em>';
-    if (typeof value === 'object') return JSON.stringify(value).substring(0, 100) + '...';
-    const str = value.toString();
-    return str.length > 50 ? str.substring(0, 50) + '...' : str;
+    if (typeof value === 'object') return JSON.stringify(value).substring(0, 50) + '...';
+    const str = String(value);
+    return str.length > 100 ? str.substring(0, 100) + '...' : str;
+}
+
+// 分页控件
+function renderPagination() {
+    const container = document.getElementById('pagination-controls');
+    if (!container) return;
+
+    let html = '';
+    
+    // 上一页
+    html += `<button class="page-btn" ${currentPage <= 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">上一页</button>`;
+    
+    // 页码
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+            html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+        } else if (i === currentPage - 3 || i === currentPage + 3) {
+            html += `<span style="padding: 8px 16px;">...</span>`;
+        }
+    }
+    
+    // 下一页
+    html += `<button class="page-btn" ${currentPage >= totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})">下一页</button>`;
+    
+    container.innerHTML = html;
+}
+
+// 切换页面
+function changePage(page) {
+    if (page < 1 || page > totalPages) return;
+    currentPage = page;
+    loadTableData();
+}
+
+// 启用编辑模式
+function enableEditing() {
+    isEditingEnabled = !isEditingEnabled;
+    const button = document.querySelector('button[onclick="enableEditing()"]');
+    
+    if (isEditingEnabled) {
+        button.textContent = '🔒 禁用编辑';
+        button.classList.add('btn-warning');
+        showStatus('data-container', '✏️ 编辑模式已启用 - 点击单元格进行编辑', 'info');
+    } else {
+        button.textContent = '✏️ 启用编辑';
+        button.classList.remove('btn-warning');
+        editingRows.clear();
+        loadTableData();
+    }
+}
+
+// 编辑行
+function editRow(rowId) {
+    editingRows.add(rowId);
+    loadTableData();
+}
+
+// 标记行已更改
+function markRowAsChanged(rowId) {
+    // 可以在这里添加更改标记逻辑
+    console.log('行已更改:', rowId);
+}
+
+// 保存所有更改
+async function saveAllChanges() {
+    if (editingRows.size === 0) {
+        alert('没有要保存的更改');
+        return;
+    }
+
+    try {
+        for (const rowId of editingRows) {
+            const rowElement = document.querySelector(`tr[data-row-id="${rowId}"]`);
+            const inputs = rowElement.querySelectorAll('.edit-cell');
+            const updates = {};
+            
+            inputs.forEach(input => {
+                updates[input.dataset.field] = input.value;
+            });
+            
+            const { error } = await supabase
+                .from(currentTable)
+                .update(updates)
+                .eq('id', rowId);
+                
+            if (error) throw error;
+        }
+        
+        editingRows.clear();
+        loadTableData();
+        alert('✅ 所有更改已保存！');
+    } catch (error) {
+        alert('❌ 保存失败: ' + error.message);
+    }
+}
+
+// 添加新行
+function addNewRow() {
+    if (!currentTable) {
+        alert('请先选择表');
+        return;
+    }
+    
+    showEditModal(null);
+}
+
+// 删除行
+async function deleteRow(rowId) {
+    if (!confirm('确定要删除这行数据吗？')) return;
+    
+    try {
+        const { error } = await supabase
+            .from(currentTable)
+            .delete()
+            .eq('id', rowId);
+            
+        if (error) throw error;
+        
+        loadTableData();
+        alert('✅ 删除成功！');
+    } catch (error) {
+        alert('❌ 删除失败: ' + error.message);
+    }
+}
+
+// 删除选中行
+async function deleteSelectedRows() {
+    const selected = Array.from(document.querySelectorAll('.row-selector:checked'))
+        .map(cb => cb.value)
+        .filter(id => id);
+    
+    if (selected.length === 0) {
+        alert('请先选择要删除的行');
+        return;
+    }
+    
+    if (!confirm(`确定要删除选中的 ${selected.length} 行数据吗？`)) return;
+    
+    try {
+        const { error } = await supabase
+            .from(currentTable)
+            .delete()
+            .in('id', selected);
+            
+        if (error) throw error;
+        
+        loadTableData();
+        alert(`✅ 成功删除 ${selected.length} 行数据！`);
+    } catch (error) {
+        alert('❌ 删除失败: ' + error.message);
+    }
+}
+
+// 全选/取消全选
+function toggleSelectAll() {
+    const selectAll = document.getElementById('select-all');
+    const checkboxes = document.querySelectorAll('.row-selector');
+    
+    checkboxes.forEach(cb => {
+        cb.checked = selectAll.checked;
+    });
 }
 
 // 数据导入
 async function handleImport() {
-    const tableName = document.getElementById('import-table-name').value.trim();
+    const tableName = document.getElementById('import-table-name').value;
     const fileInput = document.getElementById('file-input');
+    const clearTable = document.getElementById('clear-table').checked;
     
     if (!tableName) {
-        alert('❌ 请输入目标表名');
+        alert('请选择目标表');
         return;
     }
     
     if (!fileInput.files[0]) {
-        alert('❌ 请选择要导入的文件');
+        alert('请选择要导入的文件');
         return;
     }
 
-    console.log(`📥 导入数据到表: ${tableName}`);
     const file = fileInput.files[0];
     const reader = new FileReader();
     
@@ -294,45 +446,47 @@ async function handleImport() {
             let data;
             const fileContent = e.target.result;
             
-            // 根据文件类型解析
             if (file.name.endsWith('.json')) {
                 data = JSON.parse(fileContent);
             } else if (file.name.endsWith('.csv')) {
                 data = parseCSV(fileContent);
             } else {
-                throw new Error('不支持的文件格式，请使用 JSON 或 CSV 文件');
+                throw new Error('不支持的文件格式');
             }
             
-            // 验证数据格式
-            if (!data || (Array.isArray(data) && data.length === 0)) {
-                throw new Error('文件内容为空或格式不正确');
+            if (!Array.isArray(data) || data.length === 0) {
+                throw new Error('文件内容格式不正确');
             }
             
-            console.log(`📝 准备导入 ${data.length} 条记录`);
+            // 清空表（如果选择）
+            if (clearTable) {
+                const { error: deleteError } = await supabase
+                    .from(tableName)
+                    .delete()
+                    .neq('id', '00000000-0000-0000-0000-000000000000'); // 删除所有行
+                    
+                if (deleteError) throw deleteError;
+            }
             
-            // 插入数据库
-            const { error } = await supabase
+            // 插入数据
+            const { error: insertError } = await supabase
                 .from(tableName)
                 .insert(data);
+                
+            if (insertError) throw insertError;
             
-            if (error) {
-                console.error('❌ 导入失败:', error);
-                alert('❌ 导入失败: ' + error.message);
-            } else {
-                console.log('✅ 导入成功');
-                alert('✅ 导入成功！');
-                // 清空表单
-                fileInput.value = '';
-                document.getElementById('import-preview').innerHTML = '';
-            }
+            document.getElementById('import-result').innerHTML = 
+                '<div class="status success">✅ 导入成功！共导入 ' + data.length + ' 条记录</div>';
+            
+            // 清空表单
+            fileInput.value = '';
+            document.getElementById('import-preview').innerHTML = '';
+            
         } catch (error) {
-            console.error('❌ 文件解析失败:', error);
-            alert('❌ 文件解析失败: ' + error.message);
+            console.error('导入失败:', error);
+            document.getElementById('import-result').innerHTML = 
+                `<div class="status error">❌ 导入失败: ${error.message}</div>`;
         }
-    };
-    
-    reader.onerror = function() {
-        alert('❌ 文件读取失败');
     };
     
     reader.readAsText(file);
@@ -347,12 +501,10 @@ function parseCSV(csvText) {
     const result = [];
     
     for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(value => value.trim());
+        const values = lines[i].split(',').map(value => value.trim().replace(/^"(.*)"$/, '$1'));
         const obj = {};
         headers.forEach((header, index) => {
-            let value = values[index] || '';
-            value = value.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-            obj[header] = value;
+            obj[header] = values[index] || '';
         });
         result.push(obj);
     }
@@ -362,69 +514,44 @@ function parseCSV(csvText) {
 
 // 数据导出
 async function exportAsJSON() {
-    const tableName = document.getElementById('export-table-name').value.trim();
-    
+    const tableName = document.getElementById('export-table-name').value;
     if (!tableName) {
-        alert('❌ 请输入表名');
+        alert('请选择要导出的表');
         return;
     }
 
-    console.log(`📄 导出 JSON: ${tableName}`);
-    
     try {
         const { data, error } = await supabase
             .from(tableName)
-            .select('*')
-            .limit(1000); // 限制导出数量
-        
-        if (error) {
-            console.error('❌ 导出失败:', error);
-            document.getElementById('export-result').innerHTML = 
-                `<div class="status error">❌ 导出失败: ${error.message}</div>`;
-            return;
-        }
-        
-        if (!data || data.length === 0) {
-            document.getElementById('export-result').innerHTML = 
-                '<div class="status info">📝 没有数据可导出</div>';
-            return;
-        }
+            .select('*');
+            
+        if (error) throw error;
         
         const dataStr = JSON.stringify(data, null, 2);
         downloadFile(dataStr, `${tableName}-${new Date().getTime()}.json`, 'application/json');
         
         document.getElementById('export-result').innerHTML = 
-            '<div class="status success">✅ JSON 文件导出成功！</div>';
+            '<div class="status success">✅ JSON 导出成功！</div>';
             
     } catch (error) {
-        console.error('❌ 导出异常:', error);
         document.getElementById('export-result').innerHTML = 
-            `<div class="status error">❌ 导出异常: ${error.message}</div>`;
+            `<div class="status error">❌ 导出失败: ${error.message}</div>`;
     }
 }
 
 async function exportAsCSV() {
-    const tableName = document.getElementById('export-table-name').value.trim();
-    
+    const tableName = document.getElementById('export-table-name').value;
     if (!tableName) {
-        alert('❌ 请输入表名');
+        alert('请选择要导出的表');
         return;
     }
 
-    console.log(`📊 导出 CSV: ${tableName}`);
-    
     try {
         const { data, error } = await supabase
             .from(tableName)
-            .select('*')
-            .limit(1000);
-        
-        if (error) {
-            console.error('❌ 导出失败:', error);
-            document.getElementById('export-result').innerHTML = 
-                `<div class="status error">❌ 导出失败: ${error.message}</div>`;
-            return;
-        }
+            .select('*');
+            
+        if (error) throw error;
         
         if (!data || data.length === 0) {
             document.getElementById('export-result').innerHTML = 
@@ -437,13 +564,12 @@ async function exportAsCSV() {
         
         data.forEach(row => {
             const values = headers.map(header => {
-                const value = row[header];
-                // 处理包含逗号或引号的值
-                let escapedValue = String(value || '');
-                if (escapedValue.includes(',') || escapedValue.includes('"') || escapedValue.includes('\n')) {
-                    escapedValue = '"' + escapedValue.replace(/"/g, '""') + '"';
+                let value = row[header] || '';
+                value = String(value);
+                if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+                    value = '"' + value.replace(/"/g, '""') + '"';
                 }
-                return escapedValue;
+                return value;
             });
             csvRows.push(values.join(','));
         });
@@ -452,65 +578,48 @@ async function exportAsCSV() {
         downloadFile(csvString, `${tableName}-${new Date().getTime()}.csv`, 'text/csv;charset=utf-8;');
         
         document.getElementById('export-result').innerHTML = 
-            '<div class="status success">✅ CSV 文件导出成功！</div>';
+            '<div class="status success">✅ CSV 导出成功！</div>';
             
     } catch (error) {
-        console.error('❌ 导出异常:', error);
         document.getElementById('export-result').innerHTML = 
-            `<div class="status error">❌ 导出异常: ${error.message}</div>`;
+            `<div class="status error">❌ 导出失败: ${error.message}</div>`;
     }
 }
 
-// 创建表示例
-function createSampleTable() {
-    const tableName = document.getElementById('new-table-name').value.trim();
-    
-    if (!tableName) {
-        alert('❌ 请输入表名');
+async function exportAsExcel() {
+    alert('Excel 导出功能需要额外的库支持，建议使用 CSV 或 JSON 格式');
+}
+
+// SQL 查询工具
+async function executeSQL() {
+    const query = document.getElementById('sql-query').value.trim();
+    if (!query) {
+        alert('请输入 SQL 查询语句');
         return;
     }
 
-    console.log(`🛠️ 创建表示例: ${tableName}`);
-    
-    const resultDiv = document.getElementById('create-table-result');
-    resultDiv.innerHTML = `
-        <div class="status info">
-            📋 请在 Supabase SQL 编辑器中执行以下 SQL 来创建表 "${tableName}"：
-
-            <pre style="margin-top: 10px; background: #1f2937; color: white; padding: 15px; border-radius: 6px;">
--- 创建表结构
-CREATE TABLE IF NOT EXISTS ${tableName} (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(255),
-    description TEXT,
-    category VARCHAR(100),
-    value NUMERIC,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 禁用RLS以便直接访问
-ALTER TABLE ${tableName} DISABLE ROW LEVEL SECURITY;
-
--- 插入示例数据
-INSERT INTO ${tableName} (name, description, category, value) VALUES
-('示例项目1', '这是第一个示例项目', '类别A', 100.50),
-('示例项目2', '这是第二个示例项目', '类别B', 200.75),
-('示例项目3', '这是第三个示例项目', '类别A', 150.25);
-
--- 如果需要启用RLS但允许所有操作，可以执行：
--- ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;
--- CREATE POLICY "允许所有操作" ON ${tableName} FOR ALL USING (true);
-            </pre>
-
-            <p style="margin-top: 10px;">
-                💡 执行完成后，您就可以在"数据查看"标签页查看和操作数据了。
-            </p>
-        </div>
-    `;
+    try {
+        // 注意：Supabase JavaScript 客户端不支持直接执行任意 SQL
+        // 这里需要使用 Supabase 的存储过程或者 REST API
+        // 这是一个简化版本，只支持 SELECT 查询
+        
+        if (!query.toLowerCase().startsWith('select')) {
+            alert('当前只支持 SELECT 查询语句');
+            return;
+        }
+        
+        // 这里应该调用自定义的 Edge Function 或存储过程
+        // 暂时显示提示信息
+        document.getElementById('sql-result').innerHTML = 
+            '<div class="status info">🔧 SQL 执行功能需要配置 Supabase Edge Function</div>';
+            
+    } catch (error) {
+        document.getElementById('sql-result').innerHTML = 
+            `<div class="status error">❌ 执行失败: ${error.message}</div>`;
+    }
 }
 
-// 下载文件辅助函数
+// 工具函数
 function downloadFile(content, filename, mimeType) {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -523,6 +632,74 @@ function downloadFile(content, filename, mimeType) {
     URL.revokeObjectURL(url);
 }
 
+function showStatus(elementId, message, type = 'info') {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    element.textContent = message;
+    element.className = `status ${type}`;
+    element.classList.remove('hidden');
+    
+    if (type === 'info') {
+        setTimeout(() => element.classList.add('hidden'), 5000);
+    }
+}
+
+function showDashboard() {
+    document.getElementById('config-section').classList.add('hidden');
+    document.getElementById('dashboard-section').classList.remove('hidden');
+}
+
+function switchTab(tabName) {
+    document.querySelectorAll('[id^="tab-"]').forEach(tab => tab.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    
+    document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+    event.target.classList.add('active');
+    
+    // 切换到数据标签页时自动加载当前表数据
+    if (tabName === 'data' && currentTable) {
+        loadTableData();
+    }
+}
+
+function refreshTableList() {
+    loadTableList();
+    showStatus('tables-container', '🔄 刷新表列表中...', 'info');
+}
+
+function showModal(modalId) {
+    document.getElementById(modalId).style.display = 'block';
+}
+
+function hideModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+function showCreateTableModal() {
+    showModal('create-table-modal');
+}
+
+function showEditModal(rowData) {
+    // 实现编辑模态框逻辑
+    showModal('edit-row-modal');
+}
+
+function createTable() {
+    // 实现创建表逻辑
+    alert('创建表功能需要额外的配置');
+    hideModal('create-table-modal');
+}
+
+function saveRowEdit() {
+    // 实现保存行编辑逻辑
+    hideModal('edit-row-modal');
+}
+
+function clearSQL() {
+    document.getElementById('sql-query').value = '';
+}
+
 // 文件预览
 document.addEventListener('DOMContentLoaded', function() {
     const fileInput = document.getElementById('file-input');
@@ -533,12 +710,12 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const reader = new FileReader();
             reader.onload = function(e) {
-                const preview = e.target.result.substring(0, 300) + 
-                    (e.target.result.length > 300 ? '...' : '');
+                const preview = e.target.result.substring(0, 500) + 
+                    (e.target.result.length > 500 ? '...' : '');
                 document.getElementById('import-preview').innerHTML = `
                     <div class="status info">
                         <strong>文件预览:</strong>
-                        <pre style="margin-top: 8px;">${preview}</pre>
+                        <pre style="margin-top: 8px; font-size: 12px;">${preview}</pre>
                     </div>
                 `;
             };
@@ -546,18 +723,3 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
-
-// 添加调试信息到页面
-function addDebugInfo(message) {
-    console.log(message);
-    
-    // 也可以在页面上显示调试信息（可选）
-    const debugDiv = document.getElementById('config-status');
-    if (debugDiv) {
-        const debugMsg = document.createElement('div');
-        debugMsg.textContent = `[DEBUG] ${message}`;
-        debugMsg.style.fontSize = '12px';
-        debugMsg.style.color = '#666';
-        debugDiv.appendChild(debugMsg);
-    }
-}
