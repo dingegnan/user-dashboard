@@ -1,31 +1,71 @@
-// app.js - Supabase 用户数据仪表板
+// app.js - 数据管理仪表板 (免认证版本)
+
+// Supabase 配置 - 直接内置
+const SUPABASE_CONFIG = {
+    url: 'https://umcobpyncbalzwquaers.supabase.co',
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtY29icHluY2JhbHp3cXVhZXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjgxMzkxMjcsImV4cCI6MjA0MzcxNTEyN30.8Af_Vx5T0j9bQ8g9RSCgM00VU1vCwGXvXvXvXvXvXvXvX'
+};
 
 // Supabase 客户端实例
 let supabase = null;
 
 // 初始化函数
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 用户数据仪表板初始化...');
-    initializeEventListeners();
-    loadConfig();
+    console.log('🚀 数据管理仪表板初始化...');
+    initializeApp();
 });
 
-// 初始化事件监听器
-function initializeEventListeners() {
-    // 文件预览功能
-    const fileInput = document.getElementById('file-input');
-    if (fileInput) {
-        fileInput.addEventListener('change', handleFilePreview);
-    }
-    
-    // 回车键登录
-    const passwordInput = document.getElementById('password');
-    if (passwordInput) {
-        passwordInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                handleLogin();
+// 初始化应用
+function initializeApp() {
+    try {
+        // 确保 Supabase 库已加载
+        if (typeof window.supabase === 'undefined') {
+            showStatus('config-status', '❌ Supabase 库未加载，请刷新页面', 'error');
+            return;
+        }
+
+        // 直接使用内置配置初始化 Supabase
+        supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.key, {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false
             }
         });
+        
+        showStatus('config-status', '✅ 应用初始化成功！正在连接数据库...', 'info');
+        
+        // 测试连接
+        testConnection();
+    } catch (error) {
+        console.error('Initialization error:', error);
+        showStatus('config-status', '❌ 初始化失败: ' + error.message, 'error');
+    }
+}
+
+// 测试连接
+async function testConnection() {
+    try {
+        // 尝试获取数据库信息来测试连接
+        const { data, error } = await supabase.from('user_reports').select('*').limit(1);
+        
+        if (error) {
+            if (error.message.includes('does not exist')) {
+                // 表不存在，但连接成功
+                showStatus('config-status', '✅ 数据库连接成功！表不存在是正常的，您可以在"创建表"标签页创建表', 'success');
+                showDashboard();
+            } else if (error.message.includes('JWT')) {
+                showStatus('config-status', '❌ 连接失败: API Key 可能无效', 'error');
+            } else {
+                showStatus('config-status', '✅ 数据库连接成功！', 'success');
+                showDashboard();
+            }
+        } else {
+            showStatus('config-status', '✅ 数据库连接成功！发现现有数据', 'success');
+            showDashboard();
+        }
+    } catch (error) {
+        console.error('Connection test error:', error);
+        showStatus('config-status', '❌ 连接测试失败: ' + error.message, 'error');
     }
 }
 
@@ -49,182 +89,13 @@ function showStatus(elementId, message, type = 'info') {
     }
 }
 
-// 保存配置
-function saveConfig() {
-    const url = document.getElementById('supabase-url').value.trim();
-    const key = document.getElementById('supabase-key').value.trim();
-    
-    if (!url || !key) {
-        showStatus('config-status', '❌ 请填写完整的 Supabase 配置信息', 'error');
-        return;
-    }
-
-    try {
-        // 确保 Supabase 库已加载
-        if (typeof window.supabase === 'undefined') {
-            showStatus('config-status', '❌ Supabase 库未加载，请刷新页面', 'error');
-            return;
-        }
-
-        // 正确的 Supabase 初始化
-        supabase = window.supabase.createClient(url, key, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: false
-            }
-        });
-        
-        // 保存到本地存储
-        localStorage.setItem('supabase_config', JSON.stringify({ url, key }));
-        showStatus('config-status', '✅ 配置已保存，正在测试连接...', 'info');
-        
-        // 测试连接
-        testConnection();
-    } catch (error) {
-        console.error('Configuration error:', error);
-        showStatus('config-status', '❌ 配置失败: ' + error.message, 'error');
-    }
-}
-
-// 测试连接
-async function testConnection() {
-    try {
-        // 使用更简单的方式测试连接
-        const { data, error } = await supabase.auth.getSession();
-        
-        if (error) {
-            // 连接成功但需要认证
-            showStatus('config-status', '✅ Supabase 连接成功！现在可以登录使用', 'success');
-            document.getElementById('auth-section').classList.remove('hidden');
-            checkAuthState();
-        } else {
-            showStatus('config-status', '✅ Supabase 连接成功！', 'success');
-            document.getElementById('auth-section').classList.remove('hidden');
-            checkAuthState();
-        }
-    } catch (error) {
-        console.error('Connection test error:', error);
-        showStatus('config-status', '❌ 连接测试失败: ' + error.message, 'error');
-    }
-}
-
-// 加载保存的配置
-function loadConfig() {
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-        try {
-            const config = JSON.parse(saved);
-            document.getElementById('supabase-url').value = config.url;
-            document.getElementById('supabase-key').value = config.key;
-        } catch (e) {
-            console.log('无保存的配置或配置已损坏');
-        }
-    }
-}
-
-// 认证功能
-async function handleLogin() {
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    
-    if (!email || !password) {
-        showStatus('auth-status', '❌ 请输入邮箱和密码', 'error');
-        return;
-    }
-
-    showStatus('auth-status', '🔐 登录中...', 'info');
-    
-    try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password
-        });
-        
-        if (error) {
-            showStatus('auth-status', '❌ 登录失败: ' + error.message, 'error');
-        } else {
-            showStatus('auth-status', '✅ 登录成功！', 'success');
-            setTimeout(() => {
-                document.getElementById('auth-status').classList.add('hidden');
-                showDashboard();
-            }, 1000);
-        }
-    } catch (error) {
-        console.error('Login error:', error);
-        showStatus('auth-status', '❌ 登录异常: ' + error.message, 'error');
-    }
-}
-
-async function handleSignUp() {
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    
-    if (!email || !password) {
-        showStatus('auth-status', '❌ 请输入邮箱和密码', 'error');
-        return;
-    }
-
-    if (password.length < 6) {
-        showStatus('auth-status', '❌ 密码长度至少为6位', 'error');
-        return;
-    }
-
-    showStatus('auth-status', '📝 注册中...', 'info');
-    
-    try {
-        const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                emailRedirectTo: window.location.origin
-            }
-        });
-        
-        if (error) {
-            showStatus('auth-status', '❌ 注册失败: ' + error.message, 'error');
-        } else {
-            if (data.user && data.user.identities && data.user.identities.length === 0) {
-                showStatus('auth-status', '❌ 该邮箱已被注册', 'error');
-            } else {
-                showStatus('auth-status', '✅ 注册成功！请检查邮箱验证邮件', 'success');
-            }
-        }
-    } catch (error) {
-        console.error('Signup error:', error);
-        showStatus('auth-status', '❌ 注册异常: ' + error.message, 'error');
-    }
-}
-
-async function handleLogout() {
-    try {
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-            console.error('Logout error:', error);
-        }
-        showAuth();
-    } catch (error) {
-        console.error('Logout exception:', error);
-        showAuth();
-    }
-}
-
-// 界面控制
-function showAuth() {
-    document.getElementById('auth-section').classList.remove('hidden');
-    document.getElementById('dashboard-section').classList.add('hidden');
-    document.getElementById('config-section').classList.remove('hidden');
-    // 清空密码字段
-    document.getElementById('password').value = '';
-}
-
+// 显示主仪表板
 function showDashboard() {
-    document.getElementById('auth-section').classList.add('hidden');
-    document.getElementById('dashboard-section').classList.remove('hidden');
     document.getElementById('config-section').classList.add('hidden');
-    loadUserReports();
+    document.getElementById('dashboard-section').classList.remove('hidden');
 }
 
+// 切换标签页
 function switchTab(tabName) {
     // 隐藏所有标签内容
     document.querySelectorAll('[id^="tab-"]').forEach(tab => {
@@ -243,103 +114,108 @@ function switchTab(tabName) {
     event.target.classList.add('active');
 }
 
-// 数据管理功能
-async function loadUserReports() {
+// 加载表数据
+async function loadTableData() {
+    const tableName = document.getElementById('table-name').value.trim();
     const container = document.getElementById('reports-container');
-    if (!container) return;
+    
+    if (!tableName) {
+        container.innerHTML = '<div class="status error">❌ 请输入表名</div>';
+        return;
+    }
     
     container.innerHTML = '<div class="status info">📡 加载数据中...</div>';
 
     try {
-        const { data: reports, error } = await supabase
-            .from('user_reports')
+        const { data, error } = await supabase
+            .from(tableName)
             .select('*')
-            .order('created_at', { ascending: false });
-        
+            .order('created_at', { ascending: false })
+            .limit(100); // 限制返回数量
+
         if (error) {
-            container.innerHTML = `<div class="status error">❌ 加载失败: ${error.message}</div>`;
+            if (error.message.includes('does not exist')) {
+                container.innerHTML = `
+                    <div class="status error">
+                        ❌ 表 "${tableName}" 不存在<br>
+                        <small>请在"创建表"标签页创建表，或检查表名是否正确</small>
+                    </div>`;
+            } else {
+                container.innerHTML = `<div class="status error">❌ 加载失败: ${error.message}</div>`;
+            }
             return;
         }
         
-        if (!reports || reports.length === 0) {
+        if (!data || data.length === 0) {
             container.innerHTML = `
                 <div class="status info">
-                    📝 暂无数据<br>
-                    <small>请切换到"数据导入"标签页添加数据</small>
+                    📝 表 "${tableName}" 存在但是空的<br>
+                    <small>请在"数据导入"标签页添加数据</small>
                 </div>`;
             return;
         }
         
-        container.innerHTML = reports.map(report => `
-            <div class="report-item">
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
-                    <h4 style="margin: 0; color: #1f2937;">${escapeHtml(report.report_name)}</h4>
-                    <div style="font-size: 12px; color: #6b7280;">
-                        ${new Date(report.created_at).toLocaleString('zh-CN')}
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 16px;">
-                    <strong>数据预览:</strong>
-                    <pre>${JSON.stringify(report.report_data, null, 2)}</pre>
-                </div>
-                
-                <button class="btn btn-danger" onclick="deleteReport(${report.id})">
-                    🗑️ 删除
-                </button>
-            </div>
-        `).join('');
+        // 显示数据
+        renderTableData(tableName, data);
+        
     } catch (error) {
-        console.error('Load reports error:', error);
+        console.error('Load data error:', error);
         container.innerHTML = `<div class="status error">❌ 加载异常: ${error.message}</div>`;
     }
 }
 
-// HTML 转义函数
-function escapeHtml(unsafe) {
-    return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+// 渲染表格数据
+function renderTableData(tableName, data) {
+    const container = document.getElementById('reports-container');
+    const columns = Object.keys(data[0]);
+    
+    let html = `
+        <div class="status success">
+            ✅ 表 "${tableName}" 数据加载成功 (共 ${data.length} 条记录)
+        </div>
+        <div style="overflow-x: auto; margin-top: 16px;">
+            <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
+                <thead style="background: #f8f9fa;">
+                    <tr>
+                        ${columns.map(col => `<th style="padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb;">${col}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    data.forEach((row, index) => {
+        html += `<tr ${index % 2 === 0 ? 'style="background: #fafafa;"' : ''}>`;
+        columns.forEach(col => {
+            const value = formatTableValue(row[col]);
+            html += `<td style="padding: 12px; border-bottom: 1px solid #e5e7eb; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${value}</td>`;
+        });
+        html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
 }
 
-async function deleteReport(reportId) {
-    if (!confirm('确定要删除这个报表吗？此操作不可撤销。')) {
-        return;
-    }
-    
-    try {
-        const { error } = await supabase
-            .from('user_reports')
-            .delete()
-            .eq('id', reportId);
-        
-        if (error) {
-            alert('❌ 删除失败: ' + error.message);
-        } else {
-            alert('✅ 删除成功！');
-            loadUserReports();
-        }
-    } catch (error) {
-        console.error('Delete report error:', error);
-        alert('❌ 删除异常: ' + error.message);
-    }
+// 格式化表格值
+function formatTableValue(value) {
+    if (value === null || value === undefined) return '<em style="color: #999;">null</em>';
+    if (typeof value === 'object') return JSON.stringify(value).substring(0, 100) + '...';
+    const str = value.toString();
+    return str.length > 50 ? str.substring(0, 50) + '...' : str;
 }
 
 // 数据导入
 async function handleImport() {
+    const tableName = document.getElementById('import-table-name').value.trim();
     const fileInput = document.getElementById('file-input');
-    const reportName = document.getElementById('report-name').value.trim();
     
-    if (!fileInput.files[0]) {
-        alert('❌ 请选择要导入的文件');
+    if (!tableName) {
+        alert('❌ 请输入目标表名');
         return;
     }
     
-    if (!reportName) {
-        alert('❌ 请输入报表名称');
+    if (!fileInput.files[0]) {
+        alert('❌ 请选择要导入的文件');
         return;
     }
 
@@ -365,24 +241,10 @@ async function handleImport() {
                 throw new Error('文件内容为空或格式不正确');
             }
             
-            // 获取当前用户
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
-            if (userError || !user) {
-                alert('❌ 用户未登录，请重新登录');
-                showAuth();
-                return;
-            }
-            
             // 插入数据库
             const { error } = await supabase
-                .from('user_reports')
-                .insert([
-                    {
-                        user_id: user.id,
-                        report_name: reportName,
-                        report_data: data
-                    }
-                ]);
+                .from(tableName)
+                .insert(data);
             
             if (error) {
                 alert('❌ 导入失败: ' + error.message);
@@ -390,12 +252,7 @@ async function handleImport() {
                 alert('✅ 导入成功！');
                 // 清空表单
                 fileInput.value = '';
-                document.getElementById('report-name').value = '';
                 document.getElementById('import-preview').innerHTML = '';
-                // 刷新数据
-                loadUserReports();
-                // 切换回数据查看标签
-                switchTab('data');
             }
         } catch (error) {
             console.error('Import error:', error);
@@ -410,6 +267,7 @@ async function handleImport() {
     reader.readAsText(file);
 }
 
+// CSV 解析
 function parseCSV(csvText) {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length === 0) return [];
@@ -421,7 +279,6 @@ function parseCSV(csvText) {
         const values = lines[i].split(',').map(value => value.trim());
         const obj = {};
         headers.forEach((header, index) => {
-            // 移除可能的引号
             let value = values[index] || '';
             value = value.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
             obj[header] = value;
@@ -434,9 +291,16 @@ function parseCSV(csvText) {
 
 // 数据导出
 async function exportAsJSON() {
+    const tableName = document.getElementById('export-table-name').value.trim();
+    
+    if (!tableName) {
+        alert('❌ 请输入表名');
+        return;
+    }
+
     try {
-        const { data: reports, error } = await supabase
-            .from('user_reports')
+        const { data, error } = await supabase
+            .from(tableName)
             .select('*')
             .order('created_at', { ascending: false });
         
@@ -446,21 +310,18 @@ async function exportAsJSON() {
             return;
         }
         
-        if (!reports || reports.length === 0) {
+        if (!data || data.length === 0) {
             document.getElementById('export-result').innerHTML = 
                 '<div class="status info">📝 没有数据可导出</div>';
             return;
         }
         
-        const dataStr = JSON.stringify(reports, null, 2);
-        downloadFile(dataStr, `user-reports-${new Date().getTime()}.json`, 'application/json');
+        const dataStr = JSON.stringify(data, null, 2);
+        downloadFile(dataStr, `${tableName}-${new Date().getTime()}.json`, 'application/json');
         
         document.getElementById('export-result').innerHTML = 
             '<div class="status success">✅ JSON 文件导出成功！</div>';
             
-        setTimeout(() => {
-            document.getElementById('export-result').innerHTML = '';
-        }, 3000);
     } catch (error) {
         document.getElementById('export-result').innerHTML = 
             `<div class="status error">❌ 导出异常: ${error.message}</div>`;
@@ -468,9 +329,16 @@ async function exportAsJSON() {
 }
 
 async function exportAsCSV() {
+    const tableName = document.getElementById('export-table-name').value.trim();
+    
+    if (!tableName) {
+        alert('❌ 请输入表名');
+        return;
+    }
+
     try {
-        const { data: reports, error } = await supabase
-            .from('user_reports')
+        const { data, error } = await supabase
+            .from(tableName)
             .select('*')
             .order('created_at', { ascending: false });
         
@@ -480,39 +348,80 @@ async function exportAsCSV() {
             return;
         }
         
-        if (!reports || reports.length === 0) {
+        if (!data || data.length === 0) {
             document.getElementById('export-result').innerHTML = 
                 '<div class="status info">📝 没有数据可导出</div>';
             return;
         }
         
-        const headers = ['ID', '报表名称', '创建时间', '数据条数'];
+        const headers = Object.keys(data[0]);
         const csvRows = [headers.join(',')];
         
-        reports.forEach(report => {
-            const dataCount = Array.isArray(report.report_data) ? report.report_data.length : 1;
-            const row = [
-                report.id,
-                `"${report.report_name}"`,
-                `"${new Date(report.created_at).toLocaleString('zh-CN')}"`,
-                dataCount
-            ];
-            csvRows.push(row.join(','));
+        data.forEach(row => {
+            const values = headers.map(header => {
+                const value = row[header];
+                return `"${value}"`;
+            });
+            csvRows.push(values.join(','));
         });
         
         const csvString = csvRows.join('\n');
-        downloadFile(csvString, `user-reports-${new Date().getTime()}.csv`, 'text/csv;charset=utf-8;');
+        downloadFile(csvString, `${tableName}-${new Date().getTime()}.csv`, 'text/csv;charset=utf-8;');
         
         document.getElementById('export-result').innerHTML = 
             '<div class="status success">✅ CSV 文件导出成功！</div>';
             
-        setTimeout(() => {
-            document.getElementById('export-result').innerHTML = '';
-        }, 3000);
     } catch (error) {
         document.getElementById('export-result').innerHTML = 
             `<div class="status error">❌ 导出异常: ${error.message}</div>`;
     }
+}
+
+// 创建表示例
+function createSampleTable() {
+    const tableName = document.getElementById('new-table-name').value.trim();
+    
+    if (!tableName) {
+        alert('❌ 请输入表名');
+        return;
+    }
+
+    const resultDiv = document.getElementById('create-table-result');
+    resultDiv.innerHTML = `
+        <div class="status info">
+            📋 请在 Supabase SQL 编辑器中执行以下 SQL 来创建表 "${tableName}"：
+
+            <pre style="margin-top: 10px; background: #1f2937; color: white; padding: 15px; border-radius: 6px;">
+-- 创建表结构
+CREATE TABLE IF NOT EXISTS ${tableName} (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255),
+    description TEXT,
+    category VARCHAR(100),
+    value NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 禁用RLS以便直接访问
+ALTER TABLE ${tableName} DISABLE ROW LEVEL SECURITY;
+
+-- 插入示例数据
+INSERT INTO ${tableName} (name, description, category, value) VALUES
+('示例项目1', '这是第一个示例项目', '类别A', 100.50),
+('示例项目2', '这是第二个示例项目', '类别B', 200.75),
+('示例项目3', '这是第三个示例项目', '类别A', 150.25);
+
+-- 如果需要启用RLS但允许所有操作，可以执行：
+-- ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY "允许所有操作" ON ${tableName} FOR ALL USING (true);
+            </pre>
+
+            <p style="margin-top: 10px;">
+                💡 执行完成后，您就可以在"数据查看"标签页查看和操作数据了。
+            </p>
+        </div>
+    `;
 }
 
 // 下载文件辅助函数
@@ -529,7 +438,7 @@ function downloadFile(content, filename, mimeType) {
 }
 
 // 文件预览
-function handleFilePreview(e) {
+document.getElementById('file-input').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
     
@@ -545,12 +454,4 @@ function handleFilePreview(e) {
         `;
     };
     reader.readAsText(file);
-}
-
-// 检查认证状态
-async function checkAuthState() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-        showDashboard();
-    }
-}
+});
