@@ -62,28 +62,144 @@ async function testConnection() {
     }
 }
 
-// 加载表列表
+// 加载表列表 - 使用自定义函数
 async function loadTableList() {
     try {
-        // 使用信息模式查询获取所有表
-        const { data, error } = await supabase
-            .from('information_schema.tables')
-            .select('table_name')
-            .eq('table_schema', 'public')
-            .eq('table_type', 'BASE TABLE');
+        // 首先尝试使用自定义函数获取表列表
+        const { data, error } = await supabase.rpc('get_table_list');
 
-        if (error) throw error;
+        if (error) {
+            console.error('获取表列表失败:', error);
+            // 备用方案：直接查询 pg_tables
+            return await loadTableListFallback();
+        }
 
-        tableList = data.map(item => item.table_name).filter(name => !name.startsWith('_'));
-        
+        tableList = data.map(item => item.table_name);
         renderTableList();
         populateTableSelectors();
         showStatus('config-status', '✅ 数据库连接成功！发现 ' + tableList.length + ' 个表', 'success');
         showDashboard();
+        
     } catch (error) {
         console.error('加载表列表失败:', error);
-        showStatus('config-status', '⚠️ 连接成功，但无法获取表列表: ' + error.message, 'warning');
-        showDashboard();
+        await loadTableListFallback();
+    }
+}
+
+// 备用方法：直接查询 pg_tables
+async function loadTableListFallback() {
+    try {
+        const { data, error } = await supabase
+            .from('pg_tables')
+            .select('tablename')
+            .eq('schemaname', 'public')
+            .neq('tablename', 'pg_%')
+            .neq('tablename', '_%')
+            .order('tablename');
+
+        if (error) throw error;
+
+        tableList = data.map(item => item.tablename);
+        renderTableList();
+        populateTableSelectors();
+        showStatus('config-status', '✅ 数据库连接成功！发现 ' + tableList.length + ' 个表', 'success');
+        
+    } catch (error) {
+        console.error('备用方法失败:', error);
+        showManualTableInput();
+    }
+}
+
+// 手动表输入界面
+function showManualTableInput() {
+    const container = document.getElementById('tables-container');
+    container.innerHTML = `
+        <div style="background: #f8f9fa; border: 2px dashed #dee2e6; padding: 25px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 15px;">🔧</div>
+            <h4 style="color: #495057; margin-bottom: 10px;">手动表配置</h4>
+            <p style="color: #6c757d; margin-bottom: 20px;">由于数据库权限设置，无法自动获取表列表。请手动输入您要操作的表名。</p>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+                <input type="text" id="manual-table-input" 
+                       placeholder="输入表名，例如: users, products, orders" 
+                       style="flex: 1; max-width: 300px; padding: 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px;">
+                <button class="btn btn-success" onclick="addManualTable()" style="padding: 12px 20px;">
+                    ➕ 添加表
+                </button>
+            </div>
+            
+            <div style="background: white; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                <h5 style="margin-bottom: 10px;">💡 常见表名示例：</h5>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+                    <span class="table-suggestion" onclick="fillTableSuggestion('users')">users</span>
+                    <span class="table-suggestion" onclick="fillTableSuggestion('profiles')">profiles</span>
+                    <span class="table-suggestion" onclick="fillTableSuggestion('products')">products</span>
+                    <span class="table-suggestion" onclick="fillTableSuggestion('orders')">orders</span>
+                    <span class="table-suggestion" onclick="fillTableSuggestion('customers')">customers</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="manual-tables-list" style="margin-top: 20px;"></div>
+    `;
+    
+    // 更新已添加的表列表
+    updateManualTablesList();
+}
+
+// 填充表建议
+function fillTableSuggestion(tableName) {
+    document.getElementById('manual-table-input').value = tableName;
+}
+
+// 添加手动表
+function addManualTable() {
+    const tableName = document.getElementById('manual-table-input').value.trim();
+    if (!tableName) {
+        alert('请输入表名');
+        return;
+    }
+    
+    if (!tableList.includes(tableName)) {
+        tableList.push(tableName);
+    }
+    
+    renderTableList();
+    populateTableSelectors();
+    document.getElementById('manual-table-input').value = '';
+    updateManualTablesList();
+    
+    showStatus('config-status', `✅ 已添加表: ${tableName}`, 'success');
+}
+
+// 更新手动表列表显示
+function updateManualTablesList() {
+    const listContainer = document.getElementById('manual-tables-list');
+    if (tableList.length === 0) return;
+    
+    listContainer.innerHTML = `
+        <div style="background: #e7f3ff; border: 1px solid #b3d9ff; padding: 15px; border-radius: 8px;">
+            <h5 style="margin-bottom: 10px;">📋 已添加的表：</h5>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                ${tableList.map(table => `
+                    <div style="background: white; padding: 8px 15px; border-radius: 20px; border: 1px solid #3b82f6; display: flex; align-items: center; gap: 8px;">
+                        <span>${table}</span>
+                        <button onclick="removeManualTable('${table}')" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px;">×</button>
+                    </div>
+                `).join('')}
+            </div>
+            <p style="margin-top: 10px; color: #666; font-size: 14px;">点击表名可以切换到该表进行操作</p>
+        </div>
+    `;
+}
+
+// 移除手动表
+function removeManualTable(tableName) {
+    tableList = tableList.filter(table => table !== tableName);
+    updateManualTablesList();
+    if (currentTable === tableName) {
+        currentTable = '';
+        document.getElementById('current-table-name').textContent = '未选择';
     }
 }
 
@@ -723,3 +839,23 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// 添加表建议的样式
+document.head.insertAdjacentHTML('beforeend', `
+    <style>
+        .table-suggestion {
+            background: #e9ecef;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            border: 1px solid #dee2e6;
+        }
+        .table-suggestion:hover {
+            background: #3b82f6;
+            color: white;
+            transform: translateY(-2px);
+        }
+    </style>
+`);
